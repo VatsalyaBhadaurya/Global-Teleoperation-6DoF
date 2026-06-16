@@ -1,17 +1,21 @@
 # Render Blueprint — free-tier deploy of the teleoperation cloud layer.
 #
 # This hosts everything Render can host (HTTP/WebSocket):
-#   * teleop-signaling : FastAPI server. Doubles as the WebSocket *control-plane
+#   * gt6dof-signaling : FastAPI server. Doubles as the WebSocket *control-plane
 #                        relay* (transport=ws) AND the WebRTC signaling server.
-#   * teleop-ui        : Next.js operator console.
+#   * gt6dof-ui        : Next.js operator console.
 #
 # With transport=ws there is NO Zenoh router needed — leader and follower both
-# connect to teleop-signaling over wss://, so the whole test stack is free.
+# connect to the signaling server over wss://, so the whole test stack is free.
+#
+# NOTE: *.onrender.com subdomains are GLOBALLY unique. The names below must not
+# already be taken by anyone else, or Render appends a random suffix. Always
+# copy the REAL service URL from your Render dashboard rather than assuming it.
 #
 # Deploy: push this repo to GitHub, then Render → New → Blueprint → pick the repo.
 services:
   - type: web
-    name: teleop-signaling
+    name: gt6dof-signaling
     runtime: python
     plan: free
     buildCommand: pip install -e ".[api]"
@@ -28,7 +32,7 @@ services:
         sync: false
 
   - type: web
-    name: teleop-ui
+    name: gt6dof-ui
     runtime: node
     plan: free
     rootDir: ui
@@ -36,7 +40,7 @@ services:
     startCommand: npm run start -- -p $PORT
     envVars:
       # Full wss:// URL of the signaling service above. NEXT_PUBLIC_* is baked at
-      # build time, so set this in the dashboard, e.g.
-      #   wss://teleop-signaling.onrender.com
+      # build time, so set this in the dashboard to the REAL signaling URL, e.g.
+      #   wss://gt6dof-signaling.onrender.com   (or whatever Render assigned)
       - key: NEXT_PUBLIC_SIGNALING_URL
         sync: false
