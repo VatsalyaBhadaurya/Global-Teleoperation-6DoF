@@ -116,6 +116,9 @@ class WebSocketTransport(Transport):
         self._running = False
 
         async def _shutdown() -> None:
+            # Closing the socket makes `async for raw in ws` in _main exit; with
+            # _running False, _main returns and the loop drains naturally — no
+            # tasks are left pending, so no "Event loop is closed" noise.
             if self._ws is not None:
                 try:
                     await self._ws.close()
@@ -124,9 +127,13 @@ class WebSocketTransport(Transport):
 
         try:
             fut = asyncio.run_coroutine_threadsafe(_shutdown(), self._loop)
-            fut.result(timeout=2.0)  # let _main exit its `async for` cleanly
+            fut.result(timeout=2.0)
         except Exception:
             pass
-        self._loop.call_soon_threadsafe(self._loop.stop)
+        # Let _main finish on its own; only force-stop if it's wedged (e.g. mid
+        # reconnect backoff) so close() can't hang.
         if self._thread.is_alive():
+            self._thread.join(timeout=3.0)
+        if self._thread.is_alive():
+            self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(timeout=2.0)

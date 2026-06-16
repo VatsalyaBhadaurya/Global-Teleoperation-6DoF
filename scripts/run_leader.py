@@ -29,9 +29,13 @@ from teleop.leader import LeaderNode
 
 
 def procedural_source():
-    """Smooth sinusoidal sweep on joints 0 and 1; gripper cycles."""
+    """Smooth sinusoidal sweep that stays inside the safe workspace.
+
+    Joint 1 is biased positive (range ~[0, 0.5] rad) so the end-effector stays
+    above the table (z >= z_min) and never trips the workspace safety check.
+    """
     def src(t: float):
-        return ([0.6 * math.sin(0.8 * t), 0.4 * math.sin(0.5 * t), 0, 0, 0, 0],
+        return ([0.6 * math.sin(0.8 * t), 0.25 + 0.25 * math.sin(0.5 * t), 0, 0, 0, 0],
                 0.5 + 0.5 * math.sin(0.3 * t))
     return src
 
