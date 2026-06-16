@@ -71,8 +71,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Teleop leader node (Zenoh)")
     ap.add_argument("--endpoint", default=os.environ.get("ZENOH_ENDPOINT", ""),
                     help="Zenoh router endpoint, e.g. tcp/1.2.3.4:7447")
+    ap.add_argument("--url", default=os.environ.get("SIGNALING_URL", ""),
+                    help="WebSocket server URL for --transport ws, "
+                         "e.g. wss://teleop-signaling.onrender.com")
     ap.add_argument("--session", default=os.environ.get("SESSION_ID", "default"))
-    ap.add_argument("--transport", default="zenoh", choices=["zenoh", "inproc"])
+    ap.add_argument("--transport", default="zenoh", choices=["zenoh", "inproc", "ws"])
     ap.add_argument("--source", default="procedural", choices=["procedural", "keyboard"])
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -80,9 +83,10 @@ def main() -> int:
     cfg = SystemConfig.load()
     cfg.transport = args.transport
     cfg.zenoh_endpoint = args.endpoint or None
+    cfg.ws_url = args.url or None
     cfg.session_id = args.session
 
-    tx = make_transport(cfg)
+    tx = make_transport(cfg, role="leader", peer_id="leader-control")
     source = keyboard_source(cfg.dof) if args.source == "keyboard" else procedural_source()
     leader = LeaderNode(cfg, tx, source)
     leader.start()

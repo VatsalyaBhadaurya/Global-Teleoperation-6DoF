@@ -1,0 +1,42 @@
+# Render Blueprint — free-tier deploy of the teleoperation cloud layer.
+#
+# This hosts everything Render can host (HTTP/WebSocket):
+#   * teleop-signaling : FastAPI server. Doubles as the WebSocket *control-plane
+#                        relay* (transport=ws) AND the WebRTC signaling server.
+#   * teleop-ui        : Next.js operator console.
+#
+# With transport=ws there is NO Zenoh router needed — leader and follower both
+# connect to teleop-signaling over wss://, so the whole test stack is free.
+#
+# Deploy: push this repo to GitHub, then Render → New → Blueprint → pick the repo.
+services:
+  - type: web
+    name: teleop-signaling
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[api]"
+    startCommand: uvicorn teleop.cloud.signaling_server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: STUN_URL
+        value: stun:stun.l.google.com:19302
+      # Optional TURN relay for strict NATs (fill in the dashboard if needed):
+      - key: TURN_URL
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+
+  - type: web
+    name: teleop-ui
+    runtime: node
+    plan: free
+    rootDir: ui
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      # Full wss:// URL of the signaling service above. NEXT_PUBLIC_* is baked at
+      # build time, so set this in the dashboard, e.g.
+      #   wss://teleop-signaling.onrender.com
+      - key: NEXT_PUBLIC_SIGNALING_URL
+        sync: false

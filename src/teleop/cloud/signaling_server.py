@@ -130,7 +130,10 @@ async def signaling(ws: WebSocket, session_id: str, peer_id: str) -> None:
             mtype = msg.get("type")
 
             if mtype == "join":
-                role = Role(msg.get("role", "viewer"))
+                try:
+                    role = Role(msg.get("role", "viewer"))
+                except ValueError:
+                    role = Role.VIEWER  # tolerate control-plane peers
                 registry.join(session_id, peer_id, role)
                 peers = registry.peers(session_id, exclude=peer_id)
                 await ws.send_text(json.dumps({
@@ -148,7 +151,8 @@ async def signaling(ws: WebSocket, session_id: str, peer_id: str) -> None:
             elif mtype == "heartbeat":
                 registry.heartbeat(session_id, peer_id)
 
-            elif mtype in ("offer", "answer", "candidate", "telemetry", "advisory", "state"):
+            elif mtype in ("offer", "answer", "candidate", "telemetry",
+                           "advisory", "state", "pub"):
                 msg["from"] = peer_id
                 target = msg.get("to")
                 if target:

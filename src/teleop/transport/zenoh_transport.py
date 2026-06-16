@@ -66,9 +66,21 @@ class ZenohTransport(Transport):
             log.exception("Zenoh close failed")
 
 
-def make_transport(config: "Any") -> Transport:  # noqa: ANN401 - avoid import cycle
-    """Factory: build the configured transport from a SystemConfig."""
+def make_transport(config: "Any", role: str = "viewer",
+                   peer_id: str = "peer") -> Transport:  # noqa: ANN401
+    """Factory: build the configured transport from a SystemConfig.
+
+    ``role``/``peer_id`` are only used by the WebSocket transport (to identify
+    the peer to the signaling server). ``ws_url`` is read from
+    ``config.zenoh_endpoint`` (reused as the generic endpoint field) or, for ws,
+    from ``config.ws_url`` if present.
+    """
     from .inproc import InProcTransport
-    if getattr(config, "transport", "inproc") == "zenoh":
+    kind = getattr(config, "transport", "inproc")
+    if kind == "zenoh":
         return ZenohTransport(config.zenoh_endpoint, config.session_id)
+    if kind == "ws":
+        from .ws_transport import WebSocketTransport
+        url = getattr(config, "ws_url", None) or config.zenoh_endpoint
+        return WebSocketTransport(url, config.session_id, peer_id, role=role)
     return InProcTransport()

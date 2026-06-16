@@ -57,8 +57,9 @@ class SystemConfig:
     joint_limits: JointLimits = field(default_factory=JointLimits)
     workspace: WorkspaceLimits = field(default_factory=WorkspaceLimits)
     network: NetworkThresholds = field(default_factory=NetworkThresholds)
-    transport: str = "inproc"        # "inproc" | "zenoh"
+    transport: str = "inproc"        # "inproc" | "zenoh" | "ws"
     zenoh_endpoint: Optional[str] = None  # e.g. "tcp/router.example.com:7447"
+    ws_url: Optional[str] = None     # e.g. "wss://teleop-signaling.onrender.com"
     session_id: str = "default"
     recording_dir: str = "recordings"
 
@@ -70,7 +71,7 @@ class SystemConfig:
             return cfg
         data = yaml.safe_load(Path(path).read_text()) or {}
         # Shallow-merge top-level scalars; nested limit blocks override fields.
-        for key in ("control_hz", "dof", "transport", "zenoh_endpoint",
+        for key in ("control_hz", "dof", "transport", "zenoh_endpoint", "ws_url",
                     "session_id", "recording_dir"):
             if key in data:
                 setattr(cfg, key, data[key])
