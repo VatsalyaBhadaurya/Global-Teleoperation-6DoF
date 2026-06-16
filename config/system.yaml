@@ -1,0 +1,32 @@
+# Global teleoperation system configuration.
+# No hardcoded IPs in code — deployment-specific values live here.
+
+control_hz: 100.0
+dof: 6
+
+# Control-plane transport: "inproc" (local/testing) or "zenoh" (production).
+transport: inproc
+# For zenoh, point at your cloud router so NAT'd leader/follower can rendezvous:
+# transport: zenoh
+# zenoh_endpoint: "tcp/router.example.com:7447"
+zenoh_endpoint: null
+
+session_id: default
+recording_dir: recordings
+
+network:
+  warn_latency_ms: 300.0    # ctx.txt: warn operator above this
+  slow_latency_ms: 500.0    # ctx.txt: recommend slower movements above this
+  max_packet_loss: 0.05
+  command_timeout_s: 0.5     # watchdog: comms lost after this with no command
+
+workspace:
+  x_min: -0.6
+  x_max: 0.6
+  y_min: -0.6
+  y_max: 0.6
+  z_min: 0.02
+  z_max: 0.9
+
+joint_limits:
+  max_velocity: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
