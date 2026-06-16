@@ -27,13 +27,20 @@ class NetworkMonitor:
         self._last_ack_time: Optional[float] = None
         self._video_latency_ms = 0.0
         self._streams_ok = True
+        self._last_acked_stamp = 0.0
 
     def on_command_sent(self) -> None:
         self._sent += 1
 
     def on_feedback(self, command_stamp: float) -> None:
-        """Called when feedback derived from a command with ``command_stamp``
-        returns. Latency is the round trip for that command."""
+        """Called when feedback echoing ``command_stamp`` returns. Latency is the
+        round trip for that command. Duplicate echoes of the same stamp (the
+        follower re-publishes its last stamp every status frame) are ignored so
+        a paused command stream doesn't inflate the latency reading."""
+        if command_stamp <= self._last_acked_stamp:
+            self._last_ack_time = now()  # link still alive, just no new command
+            return
+        self._last_acked_stamp = command_stamp
         rtt_ms = max(0.0, (now() - command_stamp) * 1000.0)
         self._latencies.append(rtt_ms)
         self._acked += 1

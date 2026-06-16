@@ -1,72 +1,67 @@
-"""Telemetry relay: pushes robot state, network telemetry, and supervisor
-advisories from the follower side to operator UIs over the signaling WebSocket.
+"""Operator-feed publisher.
 
-This keeps the heavy media path (WebRTC) separate from the light control/status
-path: the same signaling server that brokers video also broadcasts small JSON
-status frames to every viewer in the session. Runs as an asyncio task and
-reconnects automatically.
+Pushes the *real* robot state, *real* measured network telemetry, and the
+supervisor advisories derived from them to operator UIs over the signaling
+WebSocket. This is the light status path (small JSON), kept separate from the
+heavy WebRTC media path.
 
-    python -m teleop.cloud.telemetry_relay --signaling ws://localhost:8080
+There is no synthetic/demo data here: the caller injects ``state_provider`` and
+``telemetry_provider`` callables that read the live system (e.g. the leader's
+last received follower state and the NetworkMonitor's measured RTT). If a
+provider returns ``None`` that field is simply omitted.
+
+Runs as an asyncio task and reconnects automatically.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import math
-from typing import Optional
+from typing import Callable, Optional
 
-from ..core import SystemConfig, NetworkTelemetry, RobotState, now
+from ..core import SystemConfig, NetworkTelemetry, RobotState
 from ..agent import Supervisor
 
 log = logging.getLogger(__name__)
 
+StateProvider = Callable[[], Optional[RobotState]]
+TelemetryProvider = Callable[[], Optional[NetworkTelemetry]]
+
 
 class TelemetryRelay:
     def __init__(self, signaling_url: str, session_id: str,
+                 state_provider: StateProvider,
+                 telemetry_provider: TelemetryProvider,
                  config: Optional[SystemConfig] = None,
-                 peer_id: str = "follower-telemetry", rate_hz: float = 10.0) -> None:
-        self.url = signaling_url.rstrip("/") + f"/ws/{session_id}/{peer_id}"
+                 supervisor: Optional[Supervisor] = None,
+                 peer_id: str = "operator-feed", role: str = "viewer",
+                 rate_hz: float = 10.0) -> None:
+        url = signaling_url.replace("https://", "wss://").replace("http://", "ws://")
+        self.url = url.rstrip("/") + f"/ws/{session_id}/{peer_id}"
+        self.role = role
         self.cfg = config or SystemConfig.load()
-        self.supervisor = Supervisor(self.cfg)
+        self.supervisor = supervisor or Supervisor(self.cfg)
+        self.state_provider = state_provider
+        self.telemetry_provider = telemetry_provider
         self.period = 1.0 / rate_hz
         self._stop = False
-        # Pluggable providers; defaults produce a self-contained demo signal.
-        self.state_provider = self._demo_state
-        self.telemetry_provider = self._demo_telemetry
-        self._t0 = now()
-
-    # ---- demo providers (replace with real follower hooks) ----------------
-    def _demo_state(self) -> RobotState:
-        t = now() - self._t0
-        return RobotState(
-            seq=int(t * 10), stamp=now(),
-            positions=[0.6 * math.sin(0.8 * t), 0.4 * math.sin(0.5 * t), 0, 0, 0, 0],
-            gripper_position=0.5 + 0.5 * math.sin(0.3 * t),
-        )
-
-    def _demo_telemetry(self) -> NetworkTelemetry:
-        t = now() - self._t0
-        return NetworkTelemetry(
-            stamp=now(),
-            command_latency_ms=80 + 60 * (1 + math.sin(0.2 * t)),
-            packet_loss=0.01,
-            connected=True,
-        )
 
     async def run(self) -> None:
-        import websockets  # local import: optional dep
+        import websockets
         backoff = 1.0
         while not self._stop:
             try:
                 async with websockets.connect(self.url) as ws:
-                    await ws.send(json.dumps({"type": "join", "role": "follower"}))
+                    await ws.send(json.dumps({"type": "join", "role": self.role}))
+                    log.info("operator feed connected: %s", self.url)
                     backoff = 1.0
                     while not self._stop:
                         await self._broadcast(ws)
                         await asyncio.sleep(self.period)
             except Exception:
-                log.exception("telemetry relay error; reconnecting in %.1fs", backoff)
+                if self._stop:
+                    break
+                log.warning("operator feed reconnecting in %.1fs", backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 15.0)
 
@@ -74,8 +69,10 @@ class TelemetryRelay:
         state = self.state_provider()
         tele = self.telemetry_provider()
         advisories = self.supervisor.supervise(state, tele)
-        await ws.send(json.dumps({"type": "state", "state": state.to_dict()}))
-        await ws.send(json.dumps({"type": "telemetry", "telemetry": tele.to_dict()}))
+        if state is not None:
+            await ws.send(json.dumps({"type": "state", "state": state.to_dict()}))
+        if tele is not None:
+            await ws.send(json.dumps({"type": "telemetry", "telemetry": tele.to_dict()}))
         await ws.send(json.dumps({
             "type": "advisory",
             "advisories": [
@@ -86,22 +83,3 @@ class TelemetryRelay:
 
     def stop(self) -> None:
         self._stop = True
-
-
-def main() -> int:
-    import argparse
-    ap = argparse.ArgumentParser(description="Follower telemetry relay")
-    ap.add_argument("--signaling", default="ws://localhost:8080")
-    ap.add_argument("--session", default="default")
-    args = ap.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    relay = TelemetryRelay(args.signaling, args.session)
-    try:
-        asyncio.run(relay.run())
-    except KeyboardInterrupt:
-        pass
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

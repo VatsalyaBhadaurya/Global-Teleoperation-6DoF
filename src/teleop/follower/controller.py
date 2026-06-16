@@ -43,6 +43,7 @@ class FollowerController:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._holding = False
+        self._last_cmd_stamp = 0.0   # leader-clock stamp of last command (for RTT)
         self._stats = {"received": 0, "executed": 0, "rejected": 0,
                        "clamped": 0, "dropped": 0, "estops": 0}
 
@@ -80,6 +81,7 @@ class FollowerController:
                 self._stats["dropped"] += cmd.seq - self._last_seq - 1
             self._last_seq = cmd.seq
             self._latest = cmd
+            self._last_cmd_stamp = cmd.stamp
             self.safety.note_command_received()
             if self._holding:
                 log.info("Command flow resumed; exiting safe-state hold")
@@ -135,5 +137,8 @@ class FollowerController:
             "status": state.status.value,
             "estopped": self.safety.estopped,
             "holding": self._holding,
+            # Echo the last command's (leader-clock) stamp so the leader can
+            # measure real round-trip latency without cross-machine clock sync.
+            "last_cmd_stamp": self._last_cmd_stamp,
         })
         self.tx.publish(KEY_FOLLOWER_DIAG, {"stamp": now(), **self._stats})

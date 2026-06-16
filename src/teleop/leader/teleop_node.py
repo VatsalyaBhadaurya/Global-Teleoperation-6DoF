@@ -18,7 +18,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ..core.config import SystemConfig
 from ..core.types import CommandMode, JointCommand, RobotState, now
-from ..transport.base import Transport, KEY_LEADER_COMMAND, KEY_FOLLOWER_STATE
+from ..network.monitor import NetworkMonitor
+from ..transport.base import (
+    Transport, KEY_LEADER_COMMAND, KEY_FOLLOWER_STATE, KEY_FOLLOWER_STATUS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,10 +32,14 @@ TargetSource = Callable[[float], Optional[tuple]]
 
 class LeaderNode:
     def __init__(self, config: SystemConfig, transport: Transport,
-                 source: TargetSource) -> None:
+                 source: TargetSource,
+                 monitor: Optional[NetworkMonitor] = None) -> None:
         self.cfg = config
         self.tx = transport
         self.source = source
+        # Real network telemetry: RTT is measured from the follower's echoed
+        # command stamp, so no cross-machine clock sync is required.
+        self.monitor = monitor if monitor is not None else NetworkMonitor(config)
         self._seq = 0
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -41,6 +48,7 @@ class LeaderNode:
 
     def start(self) -> None:
         self.tx.subscribe(KEY_FOLLOWER_STATE, self._on_state)
+        self.tx.subscribe(KEY_FOLLOWER_STATUS, self._on_status)
         self._running = True
         self._thread = threading.Thread(target=self._loop, name="leader", daemon=True)
         self._thread.start()
@@ -61,6 +69,12 @@ class LeaderNode:
         except Exception:
             log.exception("malformed follower state")
 
+    def _on_status(self, payload: Dict[str, Any]) -> None:
+        # Use the echoed command stamp to measure real round-trip latency.
+        stamp = payload.get("last_cmd_stamp")
+        if stamp:
+            self.monitor.on_feedback(stamp)
+
     def _loop(self) -> None:
         period = 1.0 / self.cfg.control_hz
         while self._running:
@@ -80,4 +94,5 @@ class LeaderNode:
             positions=positions,
             gripper=gripper,
         )
+        self.monitor.on_command_sent()
         self.tx.publish(KEY_LEADER_COMMAND, cmd.to_dict())
