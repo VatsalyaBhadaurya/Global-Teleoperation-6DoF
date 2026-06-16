@@ -45,6 +45,38 @@ python scripts/run_demo.py        # runs leader→transport→follower→safety�
 pytest -q                          # unit tests for safety + supervisor
 ```
 
+## Running the full distributed stack
+
+The cloud layer (Zenoh router + signaling) and follower run via Docker Compose;
+the operator UI runs in the browser. Leader/follower may be on different networks.
+
+```bash
+# 1. Cloud layer (signaling + Zenoh router) — deploy on a public host
+docker compose up zenoh signaling
+
+# 2. Follower (ROS2 bridge + safety controller + WebRTC video) — at the robot
+docker compose up follower
+
+# 3. Operator UI
+docker compose up ui          # then open http://localhost:3000
+```
+
+Run pieces directly without Docker:
+
+```bash
+# Signaling server
+uvicorn teleop.cloud.signaling_server:app --host 0.0.0.0 --port 8080
+# Follower WebRTC video publisher (synthetic cameras if none attached)
+python -m teleop.video.run_publisher --signaling ws://localhost:8080 --session default
+# Follower telemetry/state/advisory relay (feeds the UI panels)
+python -m teleop.cloud.telemetry_relay --signaling ws://localhost:8080 --session default
+# Operator UI
+cd ui && npm install && npm run dev
+```
+
+ICE/TURN and Zenoh endpoints are configured via env (`STUN_URL`, `TURN_URL`,
+`ZENOH_ENDPOINT`, `SIGNALING_URL`) — no hardcoded infrastructure.
+
 ## Status
 
 - [x] Shared core types & config
@@ -55,8 +87,23 @@ pytest -q                          # unit tests for safety + supervisor
 - [x] Network monitor
 - [x] Data recorder (Parquet)
 - [x] RO-SLM supervisor (deterministic safety rule engine + pluggable LLM)
-- [ ] ROS2 Humble packages (`docker/ros2`)
-- [ ] WebRTC video pipeline + signaling server (FastAPI)
-- [ ] React/Next.js operator UI
+- [x] ROS2 Humble bridge package (`ros2_ws/src/teleop_bridge`)
+- [x] WebRTC video pipeline + FastAPI signaling server + session registry
+- [x] React/Next.js operator UI (`ui/`)
+- [x] Docker + Docker Compose for the full stack
 
 See `ctx.txt` for the full specification.
+
+## Repository layout
+
+```
+src/teleop/        Python packages (core, transport, sim, follower, leader,
+                   network, recording, agent, cloud, video)
+ros2_ws/           ROS2 Humble workspace (teleop_bridge package)
+ui/                Next.js operator console
+docker/            Dockerfiles + follower entrypoint
+docker-compose.yml Full-stack orchestration
+config/system.yaml Deployment configuration (limits, thresholds, endpoints)
+scripts/run_demo.py Hardware-free end-to-end demo
+tests/             Unit tests (safety, supervisor, session registry)
+```
