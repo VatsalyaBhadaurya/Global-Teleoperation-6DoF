@@ -127,7 +127,14 @@ class VideoPublisher:
             log.info("video publisher joined session at %s", self.url)
             async for raw in ws:
                 msg = json.loads(raw)
-                await self._handle(ws, msg)
+                try:
+                    await self._handle(ws, msg)
+                except Exception:
+                    # One bad signaling message (e.g. an unparsable ICE
+                    # candidate) must never tear down the whole session and
+                    # drop a connected viewer.
+                    log.exception("error handling %s message; continuing",
+                                  msg.get("type"))
 
     async def _handle(self, ws, msg: dict) -> None:
         mtype = msg.get("type")
@@ -137,11 +144,18 @@ class VideoPublisher:
             await self._on_offer(ws, msg)
         elif mtype == "candidate":
             pc = self._pcs.get(msg.get("from"))
-            if pc and msg.get("candidate"):
+            cand_info = msg.get("candidate") or {}
+            cand_str = (cand_info.get("candidate") or "").strip() \
+                if isinstance(cand_info, dict) else ""
+            # An empty candidate string is the browser's end-of-candidates
+            # marker — not a real candidate; skip it (aiortc asserts on it).
+            if pc and cand_str:
                 from aiortc.sdp import candidate_from_sdp  # type: ignore
-                cand = candidate_from_sdp(msg["candidate"]["candidate"])
-                cand.sdpMid = msg["candidate"].get("sdpMid")
-                cand.sdpMLineIndex = msg["candidate"].get("sdpMLineIndex")
+                if cand_str.startswith("candidate:"):
+                    cand_str = cand_str[len("candidate:"):]
+                cand = candidate_from_sdp(cand_str)
+                cand.sdpMid = cand_info.get("sdpMid")
+                cand.sdpMLineIndex = cand_info.get("sdpMLineIndex")
                 await pc.addIceCandidate(cand)
         elif mtype == "peer-left":
             pc = self._pcs.pop(msg.get("peer_id"), None)
