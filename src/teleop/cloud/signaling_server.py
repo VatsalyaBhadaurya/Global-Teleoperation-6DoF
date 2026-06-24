@@ -35,15 +35,34 @@ except Exception as e:  # pragma: no cover - optional dependency
 
 
 def ice_servers() -> List[Dict[str, object]]:
-    """ICE servers from env (no hardcoded infra). STUN is always available;
-    TURN is used as a relay fallback when direct P2P fails behind strict NAT."""
+    """ICE servers from env (no hardcoded infra). STUN only discovers your public
+    IP; TURN actually *relays* the media and is required when the two peers are
+    on different networks behind strict NAT.
+
+    Three ways to configure, most flexible first:
+      * ICE_SERVERS — a JSON array of RTCIceServer dicts (paste a provider's
+        block verbatim, e.g. Metered/Twilio). Overrides everything else.
+      * TURN_URL[S] (comma-separated) + TURN_USERNAME + TURN_CREDENTIAL.
+      * STUN_URL (default Google STUN) — fallback, no relay.
+    """
+    raw = os.environ.get("ICE_SERVERS")
+    if raw:
+        try:
+            servers = json.loads(raw)
+            if isinstance(servers, list) and servers:
+                return servers
+            log.warning("ICE_SERVERS is not a non-empty JSON array; ignoring")
+        except json.JSONDecodeError:
+            log.warning("ICE_SERVERS is not valid JSON; ignoring")
+
     servers: List[Dict[str, object]] = [
         {"urls": os.environ.get("STUN_URL", "stun:stun.l.google.com:19302")}
     ]
-    turn_url = os.environ.get("TURN_URL")
-    if turn_url:
+    turn_urls = os.environ.get("TURN_URLS") or os.environ.get("TURN_URL")
+    if turn_urls:
+        urls = [u.strip() for u in turn_urls.split(",") if u.strip()]
         servers.append({
-            "urls": turn_url,
+            "urls": urls if len(urls) > 1 else urls[0],
             "username": os.environ.get("TURN_USERNAME", ""),
             "credential": os.environ.get("TURN_CREDENTIAL", ""),
         })
