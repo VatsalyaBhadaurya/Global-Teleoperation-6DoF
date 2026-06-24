@@ -56,14 +56,25 @@ if _HAVE_WEBRTC:
 
 
 def _quiet_ice_teardown(loop, context: dict) -> None:
-    """Swallow the harmless 'NoneType has no attribute sendto/call_exception_handler'
-    raised by aioice STUN retransmit timers after a peer connection closes; pass
-    everything else to the default handler."""
+    """Swallow harmless aioice/TURN background noise that doesn't affect a live
+    connection, and pass everything else to the default handler.
+
+    Two known-benign cases:
+      * STUN retransmit timers firing after a peer closes -> AttributeError on a
+        torn-down transport ('NoneType' has no attribute sendto/...).
+      * ICE trying every TURN candidate pair in parallel: the *losing* pairs time
+        out their channel-bind (TransactionTimeout) while another pair already
+        connected. These surface as 'Task exception was never retrieved'.
+    """
     exc = context.get("exception")
-    text = f"{context.get('message', '')} {exc}"
-    if isinstance(exc, AttributeError) and (
-        "sendto" in text or "call_exception_handler" in text
-    ):
+    text = f"{context.get('message', '')} {type(exc).__name__}: {exc}"
+    benign = (
+        "sendto", "call_exception_handler",          # post-close transport
+        "TransactionTimeout",                          # losing TURN/STUN pair
+        "socket.send() raised exception",              # torn-down UDP socket
+    )
+    if any(token in text for token in benign):
+        log.debug("suppressed ICE/TURN teardown noise: %s", text.strip())
         return
     loop.default_exception_handler(context)
 
