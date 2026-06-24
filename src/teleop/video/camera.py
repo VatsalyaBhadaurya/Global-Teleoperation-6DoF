@@ -11,6 +11,7 @@ expose a uniform ``read() -> ndarray`` (HxWx3, BGR) interface.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -19,6 +20,8 @@ try:
     import numpy as np
 except Exception:  # pragma: no cover
     np = None  # type: ignore
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -79,7 +82,12 @@ class OpenCVCamera:
             self._cap.set(cv2.CAP_PROP_FPS, cfg.fps)
             if not self._cap.isOpened():
                 raise RuntimeError("camera not opened")
-        except Exception:
+            log.info("%s camera opened on device index %s (%dx%d@%d)",
+                     cfg.name, cfg.device, cfg.width, cfg.height, cfg.fps)
+        except Exception as e:
+            log.warning("%s camera: could not open device index %s (%s) — falling "
+                        "back to SYNTHETIC test pattern. Check the index with "
+                        "`v4l2-ctl --list-devices`.", cfg.name, cfg.device, e)
             self._cap = None
             self._fallback = SyntheticCamera(cfg)
 

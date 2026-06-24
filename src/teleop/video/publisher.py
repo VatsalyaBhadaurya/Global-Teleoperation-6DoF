@@ -55,6 +55,19 @@ if _HAVE_WEBRTC:
             self.cam.close()
 
 
+def _quiet_ice_teardown(loop, context: dict) -> None:
+    """Swallow the harmless 'NoneType has no attribute sendto/call_exception_handler'
+    raised by aioice STUN retransmit timers after a peer connection closes; pass
+    everything else to the default handler."""
+    exc = context.get("exception")
+    text = f"{context.get('message', '')} {exc}"
+    if isinstance(exc, AttributeError) and (
+        "sendto" in text or "call_exception_handler" in text
+    ):
+        return
+    loop.default_exception_handler(context)
+
+
 class VideoPublisher:
     """Connects to the signaling server as a 'follower' and answers viewer
     offers with the camera tracks. One instance serves all viewers."""
@@ -75,8 +88,29 @@ class VideoPublisher:
         self._pcs: Dict[str, "RTCPeerConnection"] = {}
         self._ice_servers: list = []
         self._stop = False
+        # Each camera is opened exactly once and fanned out to every viewer via
+        # a MediaRelay — avoids reopening a busy /dev/videoN per connection.
+        self._relay = None
+        self._global_src = None
+        self._wrist_src = None
+
+    def _ensure_sources(self) -> None:
+        if self._relay is None:
+            from aiortc.contrib.media import MediaRelay  # type: ignore
+            self._relay = MediaRelay()
+            self._global_src = CameraTrack(self.global_cfg)
+            self._wrist_src = CameraTrack(self.wrist_cfg)
+            log.info("camera sources opened (global=%s, wrist=%s)",
+                     self.global_cfg.device, self.wrist_cfg.device)
 
     async def run(self) -> None:
+        # aioice schedules STUN retransmits that can fire after a peer's
+        # transport is torn down, raising a harmless 'NoneType has no attribute
+        # sendto' from a timer callback. Swallow exactly that noise.
+        try:
+            asyncio.get_running_loop().set_exception_handler(_quiet_ice_teardown)
+        except RuntimeError:
+            pass
         backoff = 1.0
         while not self._stop:
             try:
@@ -122,8 +156,11 @@ class VideoPublisher:
         ])
         pc = RTCPeerConnection(config)
         self._pcs[viewer] = pc
-        pc.addTrack(CameraTrack(self.global_cfg))
-        pc.addTrack(CameraTrack(self.wrist_cfg))
+        self._ensure_sources()
+        # Subscribe each viewer to the shared camera sources (one open device,
+        # many viewers) instead of opening the camera per connection.
+        pc.addTrack(self._relay.subscribe(self._global_src))
+        pc.addTrack(self._relay.subscribe(self._wrist_src))
 
         @pc.on("connectionstatechange")
         async def _on_state() -> None:
