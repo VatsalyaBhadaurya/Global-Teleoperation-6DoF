@@ -87,12 +87,15 @@ class ConnectionHub:
 
     def __init__(self) -> None:
         self._ws: Dict[str, WebSocket] = {}
+        self._session: Dict[str, str] = {}
 
-    def add(self, peer_id: str, ws: WebSocket) -> None:
+    def add(self, peer_id: str, ws: WebSocket, session_id: str = "") -> None:
         self._ws[peer_id] = ws
+        self._session[peer_id] = session_id
 
     def remove(self, peer_id: str) -> None:
         self._ws.pop(peer_id, None)
+        self._session.pop(peer_id, None)
 
     async def send(self, peer_id: str, message: dict) -> bool:
         ws = self._ws.get(peer_id)
@@ -102,7 +105,14 @@ class ConnectionHub:
             await ws.send_text(json.dumps(message))
             return True
         except Exception:
-            log.exception("send to %s failed", peer_id)
+            # The recipient's socket is gone (browser closed / reconnected).
+            # Drop it from the hub and registry so high-rate broadcasters stop
+            # retrying a dead connection — one quiet line, not a traceback.
+            session_id = self._session.get(peer_id, "")
+            log.info("peer %s unreachable; dropping", peer_id)
+            self.remove(peer_id)
+            if session_id:
+                registry.leave(session_id, peer_id)
             return False
 
 
@@ -121,7 +131,7 @@ async def signaling(ws: WebSocket, session_id: str, peer_id: str) -> None:
     broadcast to all other peers in the session.
     """
     await ws.accept()
-    hub.add(peer_id, ws)
+    hub.add(peer_id, ws, session_id)
     role = Role.VIEWER
     try:
         while True:
