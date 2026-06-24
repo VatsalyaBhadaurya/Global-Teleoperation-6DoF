@@ -7,6 +7,13 @@ import { VideoViewer } from "../lib/webrtc";
 const SIGNALING_URL =
   process.env.NEXT_PUBLIC_SIGNALING_URL || "ws://localhost:8080";
 
+// Session falls back to an env var then "default" for the server-rendered pass;
+// the URL (?session=demo) is applied on the client in an effect to keep
+// hydration deterministic. This lets the operator watch any named session
+// without a rebuild — e.g. https://…/?session=demo to match a follower on
+// --session demo.
+const DEFAULT_SESSION = process.env.NEXT_PUBLIC_SESSION || "default";
+
 type RobotState = {
   positions?: number[];
   status?: string;
@@ -21,7 +28,7 @@ type Advisory = { severity: string; category: string; message: string };
 
 export default function Console() {
   const [connected, setConnected] = useState(false);
-  const [session] = useState("default");
+  const [session, setSession] = useState(DEFAULT_SESSION);
   const [state, setState] = useState<RobotState>({});
   const [telemetry, setTelemetry] = useState<Telemetry>({});
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
@@ -31,6 +38,12 @@ export default function Console() {
   const wristRef = useRef<HTMLVideoElement>(null);
   const signalingRef = useRef<SignalingClient | null>(null);
   const viewerRef = useRef<VideoViewer | null>(null);
+
+  // Apply ?session= from the URL on the client (after hydration).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("session");
+    if (q && q !== session) setSession(q);
+  }, []);
 
   useEffect(() => {
     const peerId = "viewer-" + Math.random().toString(36).slice(2, 8);
