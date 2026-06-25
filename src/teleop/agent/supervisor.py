@@ -177,6 +177,25 @@ class Supervisor:
         self.llm = llm or MockLLM()
         self.system_prompt = load_system_prompt(prompt_path)
 
+    @classmethod
+    def from_config(cls, config: SystemConfig,
+                    prompt_path: Optional[str] = None) -> "Supervisor":
+        """Build a supervisor with the LLM backend selected by ``config.agent``.
+
+        Unknown/"mock" backends fall back to the offline ``MockLLM`` so the
+        pipeline always runs, even with no Ollama server present.
+        """
+        agent = getattr(config, "agent", None)
+        backend = (getattr(agent, "backend", "mock") or "mock").lower()
+        if backend == "ollama":
+            llm: LLMBackend = OllamaLLM(model=agent.model, host=agent.host)
+            log.info("Supervisor LLM backend: Ollama (model=%s, host=%s)",
+                     agent.model, agent.host)
+        else:
+            llm = MockLLM()
+            log.info("Supervisor LLM backend: mock (deterministic, offline)")
+        return cls(config, llm=llm, prompt_path=prompt_path)
+
     def supervise(self, state: Optional[RobotState],
                   telemetry: Optional[NetworkTelemetry]) -> List[Advisory]:
         """Authoritative, deterministic advisories. Safe to call at any rate."""

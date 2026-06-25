@@ -18,6 +18,7 @@ export type SignalingHandlers = {
   onTelemetry?: (msg: SignalMessage) => void;
   onState?: (msg: SignalMessage) => void;
   onAdvisory?: (msg: SignalMessage) => void;
+  onGuidance?: (msg: SignalMessage) => void;
   onStatusChange?: (connected: boolean) => void;
 };
 
@@ -58,6 +59,7 @@ export class SignalingClient {
         case "telemetry": this.handlers.onTelemetry?.(msg); break;
         case "state": this.handlers.onState?.(msg); break;
         case "advisory": this.handlers.onAdvisory?.(msg); break;
+        case "guidance": this.handlers.onGuidance?.(msg); break;
       }
     };
 

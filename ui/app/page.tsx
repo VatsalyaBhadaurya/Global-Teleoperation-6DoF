@@ -32,6 +32,7 @@ export default function Console() {
   const [state, setState] = useState<RobotState>({});
   const [telemetry, setTelemetry] = useState<Telemetry>({});
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
+  const [guidance, setGuidance] = useState<string>("");
   const [peerConn, setPeerConn] = useState<string>("new");
 
   const globalRef = useRef<HTMLVideoElement>(null);
@@ -74,6 +75,7 @@ export default function Console() {
       onState: (msg) => setState(msg.state || msg),
       onTelemetry: (msg) => setTelemetry(msg.telemetry || msg),
       onAdvisory: (msg) => setAdvisories(msg.advisories || []),
+      onGuidance: (msg) => setGuidance(msg.text || ""),
     });
     signalingRef.current = sig;
     sig.connect();
@@ -146,6 +148,13 @@ export default function Console() {
               <span>{q.toFixed(3)} rad</span>
             </div>
           ))}
+        </div>
+
+        <div className="panel">
+          <h2>AI Guidance</h2>
+          <div className="adv INFO">
+            {guidance || "Nominal. Continue teleoperation."}
+          </div>
         </div>
 
         <div className="panel">

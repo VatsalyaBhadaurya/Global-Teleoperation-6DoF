@@ -15,6 +15,7 @@ from .config import (
     JointLimits,
     WorkspaceLimits,
     NetworkThresholds,
+    AgentConfig,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "JointLimits",
     "WorkspaceLimits",
     "NetworkThresholds",
+    "AgentConfig",
 ]

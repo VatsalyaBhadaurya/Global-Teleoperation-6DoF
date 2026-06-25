@@ -51,12 +51,31 @@ class NetworkThresholds:
 
 
 @dataclass
+class AgentConfig:
+    """TeleOp-RO supervision agent settings.
+
+    The deterministic rule engine is always on. The optional LLM layer turns the
+    rule advisories into one plain-English operator instruction. ``backend`` is
+    "mock" (offline, deterministic) or "ollama" (Llama 3.2 1B via a local Ollama
+    server). Because an Ollama call is a blocking network request, guidance is
+    recomputed off the event loop at ``guidance_rate_hz`` (slow on purpose) and
+    only re-sent when the text changes — it must never stall the 10 Hz feed.
+    """
+    backend: str = "mock"            # "mock" | "ollama"
+    model: str = "llama3.2:1b"
+    host: str = "http://localhost:11434"
+    guidance_enabled: bool = True
+    guidance_rate_hz: float = 0.5    # how often the LLM line is recomputed
+
+
+@dataclass
 class SystemConfig:
     control_hz: float = 100.0
     dof: int = DOF
     joint_limits: JointLimits = field(default_factory=JointLimits)
     workspace: WorkspaceLimits = field(default_factory=WorkspaceLimits)
     network: NetworkThresholds = field(default_factory=NetworkThresholds)
+    agent: AgentConfig = field(default_factory=AgentConfig)
     transport: str = "inproc"        # "inproc" | "zenoh" | "ws"
     zenoh_endpoint: Optional[str] = None  # e.g. "tcp/router.example.com:7447"
     ws_url: Optional[str] = None     # e.g. "wss://teleop-signaling.onrender.com"
@@ -84,4 +103,7 @@ class SystemConfig:
         if "joint_limits" in data:
             for k, v in data["joint_limits"].items():
                 setattr(cfg.joint_limits, k, v)
+        if "agent" in data:
+            for k, v in data["agent"].items():
+                setattr(cfg.agent, k, v)
         return cfg

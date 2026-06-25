@@ -40,10 +40,15 @@ class TelemetryRelay:
         self.url = url.rstrip("/") + f"/ws/{session_id}/{peer_id}"
         self.role = role
         self.cfg = config or SystemConfig.load()
-        self.supervisor = supervisor or Supervisor(self.cfg)
+        self.supervisor = supervisor or Supervisor.from_config(self.cfg)
         self.state_provider = state_provider
         self.telemetry_provider = telemetry_provider
         self.period = 1.0 / rate_hz
+        agent = getattr(self.cfg, "agent", None)
+        self._guidance_enabled = bool(getattr(agent, "guidance_enabled", False))
+        ghz = float(getattr(agent, "guidance_rate_hz", 0.5) or 0.5)
+        self._guidance_period = 1.0 / max(ghz, 0.05)
+        self._last_guidance = ""   # last LLM line sent (only re-sent on change)
         self._stop = False
 
     async def run(self) -> None:
@@ -55,9 +60,19 @@ class TelemetryRelay:
                     await ws.send(json.dumps({"type": "join", "role": self.role}))
                     log.info("operator feed connected: %s", self.url)
                     backoff = 1.0
-                    while not self._stop:
-                        await self._broadcast(ws)
-                        await asyncio.sleep(self.period)
+                    self._last_guidance = ""  # force a fresh guidance push
+                    # The LLM guidance call can block (Ollama HTTP); run it on a
+                    # slow background task off the event loop so the 10 Hz feed
+                    # never stalls. Both tasks send on the same ws, but never
+                    # concurrently (guidance awaits in run_in_executor, then a
+                    # single send) — safe for the websockets client.
+                    guidance_task = asyncio.ensure_future(self._guidance_loop(ws))
+                    try:
+                        while not self._stop:
+                            await self._broadcast(ws)
+                            await asyncio.sleep(self.period)
+                    finally:
+                        guidance_task.cancel()
             except Exception:
                 if self._stop:
                     break
@@ -80,6 +95,29 @@ class TelemetryRelay:
                 for a in advisories
             ],
         }))
+
+    async def _guidance_loop(self, ws) -> None:
+        """Recompute the LLM operator guidance at a slow rate, off the event
+        loop, and push it only when the text changes."""
+        if not self._guidance_enabled:
+            return
+        loop = asyncio.get_running_loop()
+        while not self._stop:
+            try:
+                state = self.state_provider()
+                tele = self.telemetry_provider()
+                # Blocking for the Ollama backend — keep it off the event loop.
+                text = await loop.run_in_executor(
+                    None, self.supervisor.guidance, state, tele)
+                text = (text or "").strip()
+                if text and text != self._last_guidance:
+                    self._last_guidance = text
+                    await ws.send(json.dumps({"type": "guidance", "text": text}))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.debug("guidance update failed; will retry", exc_info=True)
+            await asyncio.sleep(self._guidance_period)
 
     def stop(self) -> None:
         self._stop = True

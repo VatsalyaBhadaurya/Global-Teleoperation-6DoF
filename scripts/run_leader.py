@@ -110,6 +110,14 @@ def main() -> int:
     ap.add_argument("--source", default="keyboard", choices=["keyboard", "auto"])
     ap.add_argument("--no-feed", action="store_true",
                     help="do not publish the operator feed to the UI")
+    ap.add_argument("--llm", default=None, choices=["mock", "ollama"],
+                    help="supervision LLM backend (default: from config, 'mock')")
+    ap.add_argument("--llm-model", default=None,
+                    help="Ollama model name (default: llama3.2:1b)")
+    ap.add_argument("--ollama-host", default=None,
+                    help="Ollama server URL (default: http://localhost:11434)")
+    ap.add_argument("--no-guidance", action="store_true",
+                    help="disable the natural-language LLM guidance feed")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -118,6 +126,15 @@ def main() -> int:
     cfg.zenoh_endpoint = args.endpoint or None
     cfg.ws_url = args.url or None
     cfg.session_id = args.session
+    # Supervision agent backend (CLI overrides config).
+    if args.llm:
+        cfg.agent.backend = args.llm
+    if args.llm_model:
+        cfg.agent.model = args.llm_model
+    if args.ollama_host:
+        cfg.agent.host = args.ollama_host
+    if args.no_guidance:
+        cfg.agent.guidance_enabled = False
 
     tx = make_transport(cfg, role="viewer", peer_id="leader-control")
     monitor = NetworkMonitor(cfg)
@@ -129,11 +146,14 @@ def main() -> int:
     if args.source == "keyboard":
         log.info("Keys: A/D D/W/S joints, Q/E R/F T/G Y/H joints, SPACE gripper, X hold")
 
-    # Operator feed: real follower state + measured RTT + live advisories.
+    # Operator feed: real follower state + measured RTT + live advisories +
+    # natural-language LLM guidance (backend selected by config / --llm).
+    supervisor = Supervisor.from_config(cfg)
+    import time as _time
+    session_start = _time.time()
     feed = None
     if not args.no_feed and args.transport == "ws":
         from teleop.cloud.telemetry_relay import TelemetryRelay
-        supervisor = Supervisor(cfg)
         feed = TelemetryRelay(
             args.url, args.session,
             state_provider=lambda: leader.last_follower_state,
@@ -161,6 +181,17 @@ def main() -> int:
             feed.stop()
         leader.stop()
         tx.close()
+        # End-of-session report from the supervision agent.
+        try:
+            st = leader.last_follower_state
+            t = monitor.telemetry()
+            issues = "; ".join(str(a) for a in supervisor.supervise(st, t)) or "None"
+            mins = (_time.time() - session_start) / 60.0
+            log.info("\n%s", supervisor.task_summary(
+                task=f"Teleoperation session (session={args.session}, {mins:.1f} min)",
+                success=True, attempts=1, issues=issues))
+        except Exception:
+            log.debug("task summary failed", exc_info=True)
     return 0
 
 
