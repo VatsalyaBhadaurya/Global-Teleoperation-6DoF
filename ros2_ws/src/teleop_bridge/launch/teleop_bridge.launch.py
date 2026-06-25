@@ -46,9 +46,9 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("with_camera", default_value="false",
                               description="true to also launch camera_bridge"),
         DeclareLaunchArgument("global_topic",
-                              default_value="/camera/global/image_raw"),
+                              default_value="/camera/color/image_raw"),
         DeclareLaunchArgument("wrist_topic",
-                              default_value="/camera/wrist/image_raw"),
+                              default_value="/gripper_camera/color/image_raw"),
 
         Node(
             package="teleop_bridge",

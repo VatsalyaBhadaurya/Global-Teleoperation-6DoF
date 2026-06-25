@@ -20,6 +20,29 @@ from .camera import CameraConfig, make_camera
 
 log = logging.getLogger(__name__)
 
+
+class _IceTeardownFormatter(logging.Filter):
+    """Reformat aioice teardown noise into a clear timestamped event so the
+    operator can see exactly when a viewer disconnected or the browser refreshed.
+    Suppresses the raw aioice stacktrace and replaces it with one clean line."""
+
+    import datetime as _dt
+
+    _BENIGN = ("socket.send() raised exception", "TransactionTimeout")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if any(token in msg for token in self._BENIGN):
+            ts = self._dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log.info("[%s] socket.send() raised exception — viewer disconnected or browser refreshed", ts)
+            return False   # drop the original noisy aioice record
+        return True
+
+
+logging.getLogger("aioice").addFilter(_IceTeardownFormatter())
+logging.getLogger("aioice.ice").addFilter(_IceTeardownFormatter())
+
+
 try:
     import av  # type: ignore
     from aiortc import (  # type: ignore
