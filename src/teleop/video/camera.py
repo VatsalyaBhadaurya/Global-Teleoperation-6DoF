@@ -12,6 +12,7 @@ expose a uniform ``read() -> ndarray`` (HxWx3, BGR) interface.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -103,6 +104,51 @@ class OpenCVCamera:
     def close(self) -> None:
         if self._cap is not None:
             self._cap.release()
+
+
+class ROS2Camera:
+    """Reads frames pushed in via on_image() from a ROS2 image subscription.
+
+    Falls back to a synthetic test pattern until the first ROS2 frame arrives,
+    so the WebRTC stream is always live even before the camera topic publishes.
+    """
+
+    def __init__(self, cfg: CameraConfig) -> None:
+        self.cfg = cfg
+        self._latest = None
+        self._lock = threading.Lock()
+        self._fallback = SyntheticCamera(cfg)
+
+    def on_image(self, msg) -> None:
+        """ROS2 subscription callback — convert and store the latest frame."""
+        try:
+            if np is None:
+                return
+            data = np.frombuffer(bytes(msg.data), dtype=np.uint8)
+            channels = len(msg.data) // (msg.height * msg.width)
+            frame = data.reshape((msg.height, msg.width, max(channels, 1)))
+            enc = getattr(msg, "encoding", "bgr8").lower()
+            if enc in ("rgb8", "rgb"):
+                try:
+                    import cv2 as _cv2
+                    frame = _cv2.cvtColor(frame, _cv2.COLOR_RGB2BGR)
+                except Exception:
+                    frame = frame[:, :, ::-1]   # flip channels without cv2
+            elif enc in ("mono8", "8uc1"):
+                frame = np.stack([frame[:, :, 0]] * 3, axis=-1)
+            with self._lock:
+                self._latest = frame
+        except Exception:
+            log.exception("ROS2Camera: failed to decode frame on %s", self.cfg.name)
+
+    def read(self):
+        with self._lock:
+            if self._latest is not None:
+                return self._latest.copy()
+        return self._fallback.read()
+
+    def close(self) -> None:
+        pass
 
 
 def make_camera(cfg: CameraConfig):

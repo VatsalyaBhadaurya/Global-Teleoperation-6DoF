@@ -37,10 +37,10 @@ if _HAVE_WEBRTC:
     class CameraTrack(VideoStreamTrack):
         """Wraps a camera source as a WebRTC video track at the configured FPS."""
 
-        def __init__(self, cfg: CameraConfig) -> None:
+        def __init__(self, cfg: CameraConfig, cam=None) -> None:
             super().__init__()
             self.cfg = cfg
-            self.cam = make_camera(cfg)
+            self.cam = cam if cam is not None else make_camera(cfg)
 
         async def recv(self):
             pts, time_base = await self.next_timestamp()
@@ -86,7 +86,9 @@ class VideoPublisher:
     def __init__(self, signaling_url: str, session_id: str,
                  peer_id: str = "follower-video",
                  global_cfg: Optional[CameraConfig] = None,
-                 wrist_cfg: Optional[CameraConfig] = None) -> None:
+                 wrist_cfg: Optional[CameraConfig] = None,
+                 global_cam=None,
+                 wrist_cam=None) -> None:
         if not _HAVE_WEBRTC:
             raise RuntimeError(
                 "WebRTC deps missing. Install with: pip install -e '.[video]' "
@@ -96,11 +98,11 @@ class VideoPublisher:
         self.peer_id = peer_id
         self.global_cfg = global_cfg or CameraConfig("global", 1280, 720, 30)
         self.wrist_cfg = wrist_cfg or CameraConfig("wrist", 640, 480, 30)
+        self._global_cam = global_cam   # pre-built camera instance (e.g. ROS2Camera)
+        self._wrist_cam = wrist_cam
         self._pcs: Dict[str, "RTCPeerConnection"] = {}
         self._ice_servers: list = []
         self._stop = False
-        # Each camera is opened exactly once and fanned out to every viewer via
-        # a MediaRelay — avoids reopening a busy /dev/videoN per connection.
         self._relay = None
         self._global_src = None
         self._wrist_src = None
@@ -109,10 +111,10 @@ class VideoPublisher:
         if self._relay is None:
             from aiortc.contrib.media import MediaRelay  # type: ignore
             self._relay = MediaRelay()
-            self._global_src = CameraTrack(self.global_cfg)
-            self._wrist_src = CameraTrack(self.wrist_cfg)
-            log.info("camera sources opened (global=%s, wrist=%s)",
-                     self.global_cfg.device, self.wrist_cfg.device)
+            self._global_src = CameraTrack(self.global_cfg, self._global_cam)
+            self._wrist_src = CameraTrack(self.wrist_cfg, self._wrist_cam)
+            log.info("camera sources ready (global=%s, wrist=%s)",
+                     self.global_cfg.name, self.wrist_cfg.name)
 
     async def run(self) -> None:
         # aioice schedules STUN retransmits that can fire after a peer's
