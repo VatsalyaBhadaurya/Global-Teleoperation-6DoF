@@ -101,10 +101,16 @@ python scripts/run_leader.py --transport ws --url wss://HOST --session demo --so
 | `--source keyboard` | real-time keyboard jog (default) |
 | `--source auto` | scripted sweep inside the safe workspace, no human input |
 | `--no-feed` | don't publish the operator feed to the UI (prints stats locally instead) |
+| `--llm mock` | supervision backend: deterministic offline (default) |
+| `--llm ollama` | supervision backend: Llama 3.2 1B via local Ollama (see §D) |
+| `--llm-model NAME` | Ollama model name (default `llama3.2:1b`) |
+| `--ollama-host URL` | Ollama server URL (default `http://localhost:11434`) |
+| `--no-guidance` | turn off the natural-language guidance feed |
 
 The leader automatically publishes the **operator feed** to the UI: the real
-follower state, the **measured** round-trip latency, real packet loss, and live
-supervisor advisories.
+follower state, the **measured** round-trip latency, real packet loss, live
+supervisor advisories, and a plain-English **AI guidance** line (see §D). On
+`Ctrl-C` it also prints a short end-of-session summary.
 
 ### C. Operator UI (browser, optional)
 
@@ -117,9 +123,51 @@ npm install
 npm run dev        # open http://localhost:3000
 ```
 
-The panels show your actual robot state, your real measured latency, and live
-advisories. If you deployed `gt6dof-ui` on Render, just open that URL instead of
-running it locally.
+The panels show your actual robot state, your real measured latency, live
+advisories, and the **AI Guidance** panel (the LLM's one-line "what to do now").
+If you deployed `gt6dof-ui` on Render, just open that URL instead of running it
+locally. To watch a specific session, append `?session=demo` to the URL.
+
+### D. AI supervision agent (optional LLM guidance)
+
+The agent has **two layers**:
+
+1. A **deterministic rule engine** (always on, no AI) that emits safety/network
+   advisories: high latency → "slower movements", comms lost → "hold position",
+   end-effector near the table → "lower slowly", joint near its limit, etc.
+2. An **optional LLM** that turns those advisories into a single plain-English
+   operator instruction, shown in the UI's **AI Guidance** panel.
+
+The deterministic advisories work out of the box with **no model**. To enable
+the natural-language layer with a real model, run [Ollama](https://ollama.com)
+**on the leader machine** and pull the model once:
+
+```bash
+ollama pull llama3.2:1b           # one-time download
+ollama serve                      # if not already running (http://localhost:11434)
+
+# then start the leader with the ollama backend:
+python scripts/run_leader.py --transport ws --url wss://HOST --session demo --llm ollama
+```
+
+- The LLM call is **grounded in** the deterministic rules — it can never
+  contradict the safety advisories.
+- It runs **off the control loop** at ~0.5 Hz, so it never slows the 10 Hz
+  feed; if Ollama is unreachable it falls back to the offline backend.
+- Ollama is **host-side** (your leader machine). Free cloud hosts have no GPU,
+  so the default backend is `mock`. Disable the line entirely with
+  `--no-guidance`.
+
+You can also set these in `config/system.yaml` instead of CLI flags:
+
+```yaml
+agent:
+  backend: ollama          # mock | ollama
+  model: llama3.2:1b
+  host: http://localhost:11434
+  guidance_enabled: true
+  guidance_rate_hz: 0.5
+```
 
 ---
 
@@ -170,7 +218,7 @@ docker compose up ui                # operator UI → http://localhost:3000
 | `leader`     | Teleop node: reads leader input, publishes commands, holds session     |
 | `network`    | Latency / packet-loss / stream telemetry monitor (measured RTT)        |
 | `recording`  | Synchronized demonstration recorder (Parquet / HDF5 / LeRobot)         |
-| `agent`      | Teleoperation supervisor (deterministic safety rules + pluggable LLM)  |
+| `agent`      | TeleOp-RO supervisor: deterministic safety rules + optional Ollama LLM, relayed to the UI as AI guidance |
 | `cloud`      | FastAPI signaling server, session registry, operator-feed relay        |
 | `video`      | WebRTC camera publisher (global + wrist)                               |
 
@@ -192,7 +240,7 @@ required** between the two machines.
 - [x] Leader teleop node (real keyboard input)
 - [x] Network monitor (measured round-trip latency)
 - [x] Data recorder (Parquet)
-- [x] Supervisor (deterministic safety rule engine + pluggable LLM)
+- [x] Supervisor (deterministic rule engine + Ollama LLM guidance, live in the UI)
 - [x] ROS2 Humble bridge package (`ros2_ws/src/teleop_bridge`)
 - [x] WebRTC video pipeline + FastAPI signaling server + session registry
 - [x] React/Next.js operator UI (`ui/`)
