@@ -23,27 +23,30 @@ from ..core.types import (
     now,
 )
 
-# Simple 6DOF link lengths (meters) for the planar FK approximation.
+# Default 6DOF link lengths (meters) for the planar FK approximation. A loaded
+# ArmProfile can override these per arm (see ``link_lengths`` in config/arms/).
 _LINK = [0.0, 0.20, 0.20, 0.10, 0.05, 0.05]
 
 
-def forward_kinematics(positions: List[float]) -> Pose:
+def forward_kinematics(positions: List[float],
+                       link_lengths: List[float] | None = None) -> Pose:
     """Approximate FK: treat the arm as a vertical shoulder + planar elbow chain.
 
     Good enough for workspace-limit checking and plausible EE feedback in the
     hardware-free slice; swap for a URDF/pinocchio solver when wiring real HW.
     """
+    link = link_lengths or _LINK
     base = positions[0]
     reach = (
-        _LINK[1] * math.cos(positions[1])
-        + _LINK[2] * math.cos(positions[1] + positions[2])
-        + _LINK[3] * math.cos(positions[1] + positions[2] + positions[3])
+        link[1] * math.cos(positions[1])
+        + link[2] * math.cos(positions[1] + positions[2])
+        + link[3] * math.cos(positions[1] + positions[2] + positions[3])
     )
     height = (
         0.10
-        + _LINK[1] * math.sin(positions[1])
-        + _LINK[2] * math.sin(positions[1] + positions[2])
-        + _LINK[3] * math.sin(positions[1] + positions[2] + positions[3])
+        + link[1] * math.sin(positions[1])
+        + link[2] * math.sin(positions[1] + positions[2])
+        + link[3] * math.sin(positions[1] + positions[2] + positions[3])
     )
     x = reach * math.cos(base)
     y = reach * math.sin(base)
@@ -54,7 +57,8 @@ def forward_kinematics(positions: List[float]) -> Pose:
 
 
 class MockArm:
-    def __init__(self, dof: int = DOF, max_velocity: List[float] | None = None) -> None:
+    def __init__(self, dof: int = DOF, max_velocity: List[float] | None = None,
+                 link_lengths: List[float] | None = None) -> None:
         self.dof = dof
         self._pos = [0.0] * dof
         self._vel = [0.0] * dof
@@ -62,6 +66,7 @@ class MockArm:
         self._gripper = 0.0          # 0 open … 1 closed
         self._gripper_target = 0.0
         self._max_vel = max_velocity or [3.0] * dof
+        self._link = link_lengths or _LINK
         self._status = RobotStatus.READY
         self._seq = 0
 
@@ -108,7 +113,7 @@ class MockArm:
             stamp=now(),
             positions=list(self._pos),
             velocities=list(self._vel),
-            pose=forward_kinematics(self._pos),
+            pose=forward_kinematics(self._pos, self._link),
             gripper_state=gs,
             gripper_position=self._gripper,
             status=self._status,

@@ -1,0 +1,37 @@
+# AgileX Piper profile.
+# Runs in sim by default (driver: mock) so you can rehearse the whole pipeline
+# before the arm is plugged in. To drive the real Piper, set `driver: ros2`
+# (or `piper_ros`) and confirm the `options` topics against your piper_ros node.
+name: piper
+dof: 6
+driver: mock                       # change to `ros2` / `piper_ros` for hardware
+
+# Piper URDF joints (6 DOF + parallel gripper as a trailing joint).
+joint_names: [joint1, joint2, joint3, joint4, joint5, joint6, gripper]
+link_lengths: [0.0, 0.285, 0.251, 0.10, 0.06, 0.05]
+
+gripper:
+  type: stroke                     # our 0..1 maps to physical jaw travel (metres)
+  range: [0.0, 0.07]               # ~0 (closed) .. 0.07 m (open) — confirm w/ spec
+
+# Approximate Piper joint ranges (rad). VERIFY against the AgileX URDF/datasheet
+# before driving hardware — these are conservative placeholders.
+joint_limits:
+  soft_lower: [-2.60, 0.0,  -2.90, -1.75, -1.20, -2.10]
+  soft_upper: [ 2.60, 3.14,  0.0,   1.75,  1.20,  2.10]
+  max_velocity: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
+
+workspace:
+  x_min: -0.6
+  x_max:  0.6
+  y_min: -0.6
+  y_max:  0.6
+  z_min:  0.02
+  z_max:  0.9
+
+# For real hardware (driver: ros2 / piper_ros). Confirm topic + message type
+# against your piper_ros build:
+# options:
+#   state_topic:   /joint_states
+#   command_topic: /joint_ctrl_single
+#   command_type:  joint_state
