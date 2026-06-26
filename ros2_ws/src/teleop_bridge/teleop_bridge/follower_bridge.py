@@ -26,7 +26,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from teleop.core import SystemConfig
+from teleop.core import SystemConfig, ArmProfile
 from teleop.transport import (
     make_transport,
     KEY_LEADER_COMMAND,
@@ -41,22 +41,28 @@ class FollowerBridge(Node):
         super().__init__("follower_bridge")
         self.declare_parameter("ws_url", "")
         self.declare_parameter("session_id", "default")
+        self.declare_parameter("arm", "mock")
+        self.declare_parameter("command_topic", "/joint_commands")
 
         cfg = SystemConfig.load()
         cfg.transport = "ws"
         cfg.ws_url = self.get_parameter("ws_url").value or None
         cfg.session_id = self.get_parameter("session_id").value
+        # Plug-and-play arm selection (matches scripts/run_follower.py --arm):
+        # the profile sets the default joint names, limits and gripper mapping.
+        cfg.apply_arm_profile(ArmProfile.load(self.get_parameter("arm").value))
         self.cfg = cfg
         self.tx = make_transport(cfg, peer_id="follower")
 
-        # Run the safety-checked controller against the (sim) arm. Swap MockArm
-        # for a ros2_control hardware interface to drive a real follower.
-        self._joint_names: list = []
+        # Default joint names come from the arm profile; a leader payload with
+        # explicit "names" still overrides per-command.
+        self._joint_names: list = list(cfg.arm.joint_names)
 
         self.controller = FollowerController(cfg, self.tx)
         self.controller.start()
 
-        self.pub_js = self.create_publisher(JointState, "/joint_commands", 10)
+        command_topic = self.get_parameter("command_topic").value or "/joint_commands"
+        self.pub_js = self.create_publisher(JointState, command_topic, 10)
         self.pub_status = self.create_publisher(String, "/follower/status", 10)
         self.pub_diag = self.create_publisher(String, "/follower/diagnostics", 10)
         self.tx.subscribe(KEY_LEADER_COMMAND, self._on_command)

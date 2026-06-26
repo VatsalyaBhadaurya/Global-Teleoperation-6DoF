@@ -25,7 +25,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from teleop.core import SystemConfig
+from teleop.core import SystemConfig, ArmProfile
 from teleop.transport import make_transport
 from teleop.follower import FollowerController
 
@@ -39,6 +39,10 @@ def main() -> int:
                     help="WebSocket server URL for --transport ws")
     ap.add_argument("--session", default=os.environ.get("SESSION_ID", "default"))
     ap.add_argument("--transport", default="ws", choices=["zenoh", "inproc", "ws"])
+    ap.add_argument("--arm", default=os.environ.get("ARM_PROFILE", "mock"),
+                    help="arm profile: a name in config/arms/ (e.g. mock, so100, "
+                         "piper) or a path to your own <arm>.yaml. Sets limits, "
+                         "joint names, gripper mapping and which driver to load.")
     ap.add_argument("--video", action="store_true", help="publish camera WebRTC streams")
     ap.add_argument("--global-cam", type=int, default=None,
                     help="OpenCV device index for the global camera (real camera)")
@@ -52,12 +56,17 @@ def main() -> int:
     cfg.zenoh_endpoint = args.endpoint or None
     cfg.ws_url = args.url or None
     cfg.session_id = args.session
+    # Plug-and-play arm selection: load the chosen profile and fold its limits,
+    # joint names, gripper mapping and driver into the config. The controller
+    # builds the matching driver (MockArm or a real ROS2 arm) from this.
+    cfg.apply_arm_profile(ArmProfile.load(args.arm))
 
     tx = make_transport(cfg, role="viewer", peer_id="follower-control")
     follower = FollowerController(cfg, tx)
     follower.start()
-    log.info("Follower running (session=%s, transport=%s). Ctrl-C to stop.",
-             args.session, args.transport)
+    log.info("Follower running (session=%s, transport=%s, arm=%s, driver=%s). "
+             "Ctrl-C to stop.", args.session, args.transport, cfg.arm.name,
+             cfg.arm.driver)
 
     publisher = None
     if args.video:

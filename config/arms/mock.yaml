@@ -1,0 +1,25 @@
+# Mock arm — the default, hardware-free profile.
+# Drives the kinematic MockArm so the whole stack runs with no robot attached.
+name: mock
+dof: 6
+driver: mock                       # key into the ArmDriver registry
+
+joint_names: [joint0, joint1, joint2, joint3, joint4, joint5]
+link_lengths: [0.0, 0.20, 0.20, 0.10, 0.05, 0.05]   # planar-FK approximation (m)
+
+gripper:
+  type: normalized                 # command passed through as 0 (open) .. 1 (closed)
+  range: [0.0, 1.0]
+
+joint_limits:
+  soft_lower: [-2.9, -2.9, -2.9, -2.9, -2.9, -2.9]
+  soft_upper: [ 2.9,  2.9,  2.9,  2.9,  2.9,  2.9]
+  max_velocity: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
+
+workspace:
+  x_min: -0.6
+  x_max:  0.6
+  y_min: -0.6
+  y_max:  0.6
+  z_min:  0.02
+  z_max:  0.9

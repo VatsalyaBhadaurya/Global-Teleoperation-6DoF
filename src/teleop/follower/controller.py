@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from ..core.config import SystemConfig
 from ..core.types import JointCommand, now
-from ..sim.mock_arm import MockArm
+from ..drivers import ArmDriver, make_arm
 from ..transport.base import (
     Transport,
     KEY_LEADER_COMMAND,
@@ -32,10 +32,13 @@ log = logging.getLogger(__name__)
 
 class FollowerController:
     def __init__(self, config: SystemConfig, transport: Transport,
-                 arm: Optional[MockArm] = None) -> None:
+                 arm: Optional[ArmDriver] = None) -> None:
         self.cfg = config
         self.tx = transport
-        self.arm = arm or MockArm(config.dof, config.joint_limits.max_velocity)
+        # The arm is whatever the selected ArmProfile names — MockArm by default,
+        # a real ROS2 arm when a hardware profile is loaded. An explicit ``arm``
+        # still wins (tests, custom drivers).
+        self.arm = arm or make_arm(config)
         self.safety = SafetyController(config)
         self._latest: Optional[JointCommand] = None
         self._last_seq = -1

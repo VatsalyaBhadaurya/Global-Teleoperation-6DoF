@@ -16,6 +16,8 @@ from .config import (
     WorkspaceLimits,
     NetworkThresholds,
     AgentConfig,
+    ArmProfile,
+    GripperSpec,
 )
 
 __all__ = [
@@ -33,4 +35,6 @@ __all__ = [
     "WorkspaceLimits",
     "NetworkThresholds",
     "AgentConfig",
+    "ArmProfile",
+    "GripperSpec",
 ]

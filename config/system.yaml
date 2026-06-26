@@ -4,6 +4,12 @@
 control_hz: 100.0
 dof: 6
 
+# Selected arm — loads config/arms/<name>.yaml (sets joint names, limits,
+# gripper mapping, kinematics and which driver to load). Override per-run with
+# `run_follower.py --arm <name|path>`. Profiles run in sim (driver: mock) until
+# you switch the profile's `driver:` to `ros2` for real hardware.
+arm: piper
+
 # Control-plane transport: "inproc" (local/testing) or "zenoh" (production).
 transport: inproc
 # For zenoh, point at your cloud router so NAT'd leader/follower can rendezvous:
