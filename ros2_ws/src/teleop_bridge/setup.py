@@ -25,6 +25,7 @@ setup(
             "leader_bridge = teleop_bridge.leader_bridge:main",
             "follower_bridge = teleop_bridge.follower_bridge:main",
             "camera_bridge = teleop_bridge.camera_bridge:main",
+            "camera_publisher = teleop_bridge.camera_publisher:main",
         ],
     },
 )

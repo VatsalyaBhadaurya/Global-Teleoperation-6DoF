@@ -62,6 +62,10 @@ class SystemConfig:
     ws_url: Optional[str] = None     # e.g. "wss://teleop-signaling.onrender.com"
     session_id: str = "default"
     recording_dir: str = "recordings"
+    # Follower arm driver: "mock" (sim, default) | "so101" (real Feetech SO-101).
+    follower_arm: str = "mock"
+    so101_port: str = "/dev/ttyACM0"       # follower serial port
+    so101_calibration_dir: Optional[str] = None  # None -> package .cache
 
     @classmethod
     def load(cls, path: Optional[str] = None) -> "SystemConfig":
@@ -72,7 +76,8 @@ class SystemConfig:
         data = yaml.safe_load(Path(path).read_text()) or {}
         # Shallow-merge top-level scalars; nested limit blocks override fields.
         for key in ("control_hz", "dof", "transport", "zenoh_endpoint", "ws_url",
-                    "session_id", "recording_dir"):
+                    "session_id", "recording_dir", "follower_arm", "so101_port",
+                    "so101_calibration_dir"):
             if key in data:
                 setattr(cfg, key, data[key])
         if "network" in data:

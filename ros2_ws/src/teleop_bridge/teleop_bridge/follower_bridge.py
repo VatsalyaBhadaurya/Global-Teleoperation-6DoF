@@ -41,28 +41,53 @@ class FollowerBridge(Node):
         super().__init__("follower_bridge")
         self.declare_parameter("ws_url", "")
         self.declare_parameter("session_id", "default")
+        # Arm selection (override config/system.yaml from the launch file).
+        self.declare_parameter("follower_arm", "")     # "" -> use config value
+        self.declare_parameter("so101_port", "")       # "" -> use config value
 
         cfg = SystemConfig.load()
         cfg.transport = "ws"
         cfg.ws_url = self.get_parameter("ws_url").value or None
         cfg.session_id = self.get_parameter("session_id").value
+        cfg.follower_arm = self.get_parameter("follower_arm").value or cfg.follower_arm
+        cfg.so101_port = self.get_parameter("so101_port").value or cfg.so101_port
         self.cfg = cfg
         self.tx = make_transport(cfg, peer_id="follower")
 
-        # Run the safety-checked controller against the (sim) arm. Swap MockArm
-        # for a ros2_control hardware interface to drive a real follower.
+        # Drive the configured arm through the safety-checked controller. "mock"
+        # uses the built-in sim; "so101" drives the real Feetech SO-101.
         self._joint_names: list = []
 
-        self.controller = FollowerController(cfg, self.tx)
+        arm = self._make_arm(cfg)
+        self.controller = FollowerController(cfg, self.tx, arm=arm)
         self.controller.start()
 
-        self.pub_js = self.create_publisher(JointState, "/joint_commands", 10)
+        self.pub_js = self.create_publisher(JointState, "/follower_joint_commands", 10)
         self.pub_status = self.create_publisher(String, "/follower/status", 10)
         self.pub_diag = self.create_publisher(String, "/follower/diagnostics", 10)
         self.tx.subscribe(KEY_LEADER_COMMAND, self._on_command)
         self.tx.subscribe(KEY_FOLLOWER_STATUS, self._on_status)
         self.tx.subscribe(KEY_FOLLOWER_DIAG, self._on_diag)
         self.get_logger().info(f"follower_bridge up (ws_url={cfg.ws_url!r}, session={cfg.session_id!r})")
+
+    def _make_arm(self, cfg: SystemConfig):
+        """Construct the follower arm driver from config. None -> MockArm."""
+        arm_kind = (cfg.follower_arm or "mock").lower()
+        if arm_kind in ("mock", ""):
+            return None  # FollowerController falls back to MockArm
+        if arm_kind == "so101":
+            from teleop.hardware.so101_arm import SO101Arm
+            self.get_logger().info(
+                f"Connecting SO-101 follower on {cfg.so101_port} ...")
+            arm = SO101Arm(
+                dof=cfg.dof,
+                max_velocity=cfg.joint_limits.max_velocity,
+                port=cfg.so101_port,
+                calibration_dir=cfg.so101_calibration_dir,
+            )
+            self.get_logger().info("SO-101 follower connected.")
+            return arm
+        raise ValueError(f"unknown follower_arm: {cfg.follower_arm!r}")
 
     def _on_command(self, payload: dict) -> None:
         if "names" in payload:
@@ -85,6 +110,9 @@ class FollowerBridge(Node):
 
     def destroy_node(self) -> None:
         self.controller.stop()
+        disconnect = getattr(self.controller.arm, "disconnect", None)
+        if callable(disconnect):
+            disconnect()
         self.tx.close()
         super().destroy_node()
 
