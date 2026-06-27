@@ -28,12 +28,17 @@ class PiperRosNode(Node):
         self.declare_parameter('auto_enable', False)
         self.declare_parameter('gripper_exist', True)
         self.declare_parameter('gripper_val_mutiple', 1)
+        # Leader mode: enable the arm (proper bring-up), wait for enable_status,
+        # then immediately disable so the arm is back-drivable for teleoperation.
+        self.declare_parameter('disable_after_enable', False)
 
         self.can_port = self.get_parameter('can_port').get_parameter_value().string_value
         self.auto_enable = self.get_parameter('auto_enable').get_parameter_value().bool_value
         self.gripper_exist = self.get_parameter('gripper_exist').get_parameter_value().bool_value
         self.gripper_val_mutiple = self.get_parameter('gripper_val_mutiple').get_parameter_value().integer_value
         self.gripper_val_mutiple = max(0, min(self.gripper_val_mutiple, 10))
+        self.disable_after_enable = self.get_parameter('disable_after_enable').get_parameter_value().bool_value
+        self._disabled_after_enable = False
 
         self.get_logger().info(f"can_port is {self.can_port}")
         self.get_logger().info(f"auto_enable is {self.auto_enable}")
@@ -121,7 +126,18 @@ class PiperRosNode(Node):
             if(elapsed_time_flag):
                 self.get_logger().info("Automatic enable timeout, exiting program")
                 rclpy.shutdown()
-            
+
+            # Leader bring-up: once enable is confirmed, disable the arm once so it
+            # becomes back-drivable (equivalent to publishing enable_flag=false).
+            if (self.disable_after_enable and self.__enable_flag
+                    and not self._disabled_after_enable):
+                self.get_logger().info("Enable confirmed -> disabling arm (leader is now movable)")
+                self.piper.DisableArm(7)
+                if self.gripper_exist:
+                    self.piper.GripperCtrl(0, 1000, 0x02, 0)
+                self.__enable_flag = False
+                self._disabled_after_enable = True
+
             if self.piper.isOk():
                 self.PublishArmState()
                 self.PublishArmJointAndGripper()

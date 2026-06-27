@@ -59,7 +59,6 @@ def generate_launch_description() -> LaunchDescription:
     leader_can_port    = LaunchConfiguration("leader_can_port")
     follower_can_port  = LaunchConfiguration("follower_can_port")
     gripper_exist      = LaunchConfiguration("gripper_exist")
-    piper_leader_auto_enable = LaunchConfiguration("piper_leader_auto_enable")
 
     shared_params = [{"ws_url": ws_url, "session_id": session}]
 
@@ -118,8 +117,6 @@ def generate_launch_description() -> LaunchDescription:
                               description="Piper follower CAN port (use can1 for a 2nd arm on one PC)"),
         DeclareLaunchArgument("gripper_exist", default_value="true",
                               description="Piper: arm has a gripper"),
-        DeclareLaunchArgument("piper_leader_auto_enable", default_value="false",
-                              description="Piper leader: keep false so the arm stays back-drivable"),
 
         # SO-101 leader arm reader -> publishes /leader_joint_states (radians),
         # which leader_bridge already subscribes to.
@@ -137,10 +134,11 @@ def generate_launch_description() -> LaunchDescription:
             condition=so101_leader_if,
         ),
 
-        # Piper LEADER: piper_single_ctrl reads the (back-drivable) leader arm and
-        # publishes its state on 'follower_joint_states' -> remapped to
-        # /leader_joint_states for leader_bridge. auto_enable off so it stays
-        # passive. Namespaced so it can coexist with a follower arm on one machine.
+        # Piper LEADER: piper_single_ctrl reads the leader arm and publishes its
+        # state on 'follower_joint_states' -> remapped to /leader_joint_states for
+        # leader_bridge. Proper bring-up: enable the arm, then disable it once
+        # enable is confirmed so it's back-drivable (disable_after_enable=true).
+        # Namespaced so it can coexist with a follower arm on one machine.
         Node(
             package="piper",
             executable="piper_single_ctrl",
@@ -149,7 +147,8 @@ def generate_launch_description() -> LaunchDescription:
             output="screen",
             parameters=[{
                 "can_port": leader_can_port,
-                "auto_enable": piper_leader_auto_enable,
+                "auto_enable": True,
+                "disable_after_enable": True,
                 "gripper_exist": gripper_exist,
             }],
             remappings=[("follower_joint_states", "/leader_joint_states")],
