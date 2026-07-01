@@ -44,7 +44,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description() -> LaunchDescription:
     side         = LaunchConfiguration("side")
+    transport    = LaunchConfiguration("transport")
     ws_url       = LaunchConfiguration("ws_url")
+    zenoh_ep     = LaunchConfiguration("zenoh_endpoint")
     session      = LaunchConfiguration("session_id")
     with_camera  = LaunchConfiguration("with_camera")
     global_topic = LaunchConfiguration("global_topic")
@@ -60,7 +62,8 @@ def generate_launch_description() -> LaunchDescription:
     follower_can_port  = LaunchConfiguration("follower_can_port")
     gripper_exist      = LaunchConfiguration("gripper_exist")
 
-    shared_params = [{"ws_url": ws_url, "session_id": session}]
+    shared_params = [{"transport": transport, "ws_url": ws_url,
+                      "zenoh_endpoint": zenoh_ep, "session_id": session}]
 
     on_leader   = "' in ('leader', 'both')"
     on_follower = "' in ('follower', 'both')"
@@ -91,15 +94,19 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("ws_url",
                               default_value="wss://gt6dof-signaling.onrender.com"),
         DeclareLaunchArgument("session_id", default_value="demo"),
+        DeclareLaunchArgument("transport", default_value="ws",
+                              description="control-plane transport: ws | zenoh | inproc"),
+        DeclareLaunchArgument("zenoh_endpoint", default_value="",
+                              description="Zenoh router endpoint, e.g. tcp/router.example.com:7447"),
         DeclareLaunchArgument("with_camera", default_value="false",
                               description="true to also launch the cameras + camera_bridge"),
         DeclareLaunchArgument("global_topic",
                               default_value="/global_camera/color/image_raw"),
         DeclareLaunchArgument("wrist_topic",
                               default_value="/gripper_camera/color/image_raw"),
-        DeclareLaunchArgument("global_cam_device", default_value="0",
+        DeclareLaunchArgument("global_cam_device", default_value="2",
                               description="global camera: index ('0') or /dev/v4l/by-id/... path"),
-        DeclareLaunchArgument("gripper_cam_device", default_value="1",
+        DeclareLaunchArgument("gripper_cam_device", default_value="6",
                               description="gripper camera: index ('1') or /dev/v4l/by-id/... path"),
         DeclareLaunchArgument("leader_arm", default_value="none",
                               description="leader arm reader: 'none' | 'so101' | 'piper'"),
@@ -171,7 +178,9 @@ def generate_launch_description() -> LaunchDescription:
             name="follower_bridge",
             output="screen",
             parameters=[{
+                "transport": transport,
                 "ws_url": ws_url,
+                "zenoh_endpoint": zenoh_ep,
                 "session_id": session,
                 "follower_arm": bridge_follower_arm,
                 "so101_port": follower_port,

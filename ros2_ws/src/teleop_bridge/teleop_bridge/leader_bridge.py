@@ -32,12 +32,15 @@ from teleop.transport import (
 class LeaderBridge(Node):
     def __init__(self) -> None:
         super().__init__("leader_bridge")
+        self.declare_parameter("transport", "ws")       # "ws" | "zenoh" | "inproc"
         self.declare_parameter("ws_url", "")
+        self.declare_parameter("zenoh_endpoint", "")     # e.g. "tcp/router.example.com:7447"
         self.declare_parameter("session_id", "default")
 
         cfg = SystemConfig.load()
-        cfg.transport = "ws"
+        cfg.transport = self.get_parameter("transport").value or cfg.transport
         cfg.ws_url = self.get_parameter("ws_url").value or None
+        cfg.zenoh_endpoint = self.get_parameter("zenoh_endpoint").value or None
         cfg.session_id = self.get_parameter("session_id").value
         self.cfg = cfg
         self.tx = make_transport(cfg, peer_id="leader")

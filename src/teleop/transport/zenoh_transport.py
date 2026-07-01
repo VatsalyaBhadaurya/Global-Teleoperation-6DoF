@@ -51,8 +51,11 @@ class ZenohTransport(Transport):
     def subscribe(self, key: str, handler: Handler) -> None:
         def _on_sample(sample: Any) -> None:
             try:
-                data = bytes(sample.payload).decode("utf-8")
-                handler(json.loads(data))
+                payload = sample.payload
+                # zenoh 1.x exposes bytes via ZBytes.to_bytes(); older builds
+                # support bytes(payload). Handle both so an API bump can't break us.
+                raw = payload.to_bytes() if hasattr(payload, "to_bytes") else bytes(payload)
+                handler(json.loads(raw.decode("utf-8")))
             except Exception:
                 log.exception("Zenoh subscriber error on %s", key)
 

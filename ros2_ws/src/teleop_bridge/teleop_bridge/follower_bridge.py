@@ -39,15 +39,18 @@ from teleop.follower import FollowerController
 class FollowerBridge(Node):
     def __init__(self) -> None:
         super().__init__("follower_bridge")
+        self.declare_parameter("transport", "ws")       # "ws" | "zenoh" | "inproc"
         self.declare_parameter("ws_url", "")
+        self.declare_parameter("zenoh_endpoint", "")     # e.g. "tcp/router.example.com:7447"
         self.declare_parameter("session_id", "default")
         # Arm selection (override config/system.yaml from the launch file).
         self.declare_parameter("follower_arm", "")     # "" -> use config value
         self.declare_parameter("so101_port", "")       # "" -> use config value
 
         cfg = SystemConfig.load()
-        cfg.transport = "ws"
+        cfg.transport = self.get_parameter("transport").value or cfg.transport
         cfg.ws_url = self.get_parameter("ws_url").value or None
+        cfg.zenoh_endpoint = self.get_parameter("zenoh_endpoint").value or None
         cfg.session_id = self.get_parameter("session_id").value
         cfg.follower_arm = self.get_parameter("follower_arm").value or cfg.follower_arm
         cfg.so101_port = self.get_parameter("so101_port").value or cfg.so101_port
