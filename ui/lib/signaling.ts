@@ -19,6 +19,9 @@ export type SignalingHandlers = {
   onState?: (msg: SignalMessage) => void;
   onAdvisory?: (msg: SignalMessage) => void;
   onStatusChange?: (connected: boolean) => void;
+  // WebSocket video transport:
+  onVideoFrame?: (msg: SignalMessage) => void; // base64 JPEG in JSON
+  onBinaryFrame?: (buf: ArrayBuffer) => void; // 1 byte cam id + raw JPEG
 };
 
 export class SignalingClient {
@@ -39,6 +42,7 @@ export class SignalingClient {
     this.closed = false;
     const url = `${this.baseUrl.replace(/\/$/, "")}/ws/${this.sessionId}/${this.peerId}`;
     this.ws = new WebSocket(url);
+    this.ws.binaryType = "arraybuffer"; // receive binary video frames as ArrayBuffer
 
     this.ws.onopen = () => {
       this.handlers.onStatusChange?.(true);
@@ -47,6 +51,11 @@ export class SignalingClient {
     };
 
     this.ws.onmessage = (ev) => {
+      // Binary frames (websocket video) arrive as ArrayBuffer, not text.
+      if (typeof ev.data !== "string") {
+        this.handlers.onBinaryFrame?.(ev.data as ArrayBuffer);
+        return;
+      }
       const msg: SignalMessage = JSON.parse(ev.data);
       switch (msg.type) {
         case "joined": this.handlers.onJoined?.(msg); break;
@@ -58,6 +67,7 @@ export class SignalingClient {
         case "telemetry": this.handlers.onTelemetry?.(msg); break;
         case "state": this.handlers.onState?.(msg); break;
         case "advisory": this.handlers.onAdvisory?.(msg); break;
+        case "video-frame": this.handlers.onVideoFrame?.(msg); break;
       }
     };
 

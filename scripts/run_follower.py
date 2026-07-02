@@ -39,11 +39,19 @@ def main() -> int:
                     help="WebSocket server URL for --transport ws")
     ap.add_argument("--session", default=os.environ.get("SESSION_ID", "default"))
     ap.add_argument("--transport", default="ws", choices=["zenoh", "inproc", "ws"])
-    ap.add_argument("--video", action="store_true", help="publish camera WebRTC streams")
+    ap.add_argument("--video", action="store_true", help="publish camera video streams")
     ap.add_argument("--global-cam", type=int, default=None,
                     help="OpenCV device index for the global camera (real camera)")
     ap.add_argument("--wrist-cam", type=int, default=None,
                     help="OpenCV device index for the wrist camera (real camera)")
+    ap.add_argument("--video-transport", choices=("webrtc", "websocket"),
+                    default="webrtc",
+                    help="video transport: webrtc (codec/RTP, default) or "
+                         "websocket (JPEG frames over the signaling relay)")
+    ap.add_argument("--video-format", choices=("binary", "base64"),
+                    default="binary",
+                    help="websocket wire format (ignored for webrtc): raw binary "
+                         "JPEG or base64 JPEG in JSON")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -62,12 +70,13 @@ def main() -> int:
     publisher = None
     if args.video:
         from teleop.video.camera import CameraConfig
-        from teleop.video.publisher import VideoPublisher
+        from teleop.video.publisher import make_video_publisher
         if args.global_cam is None and args.wrist_cam is None:
             log.warning("--video without --global-cam/--wrist-cam: using synthetic "
                         "test patterns (no real camera attached).")
-        publisher = VideoPublisher(
+        publisher = make_video_publisher(
             args.url, args.session, "follower-video",
+            transport=args.video_transport, video_format=args.video_format,
             global_cfg=CameraConfig("global", 1280, 720, 30, args.global_cam),
             wrist_cfg=CameraConfig("wrist", 640, 480, 30, args.wrist_cam),
         )

@@ -58,6 +58,8 @@ def generate_launch_description() -> LaunchDescription:
     calibration_dir = LaunchConfiguration("calibration_dir")
     global_cam_device  = LaunchConfiguration("global_cam_device")
     gripper_cam_device = LaunchConfiguration("gripper_cam_device")
+    video_transport = LaunchConfiguration("video_transport")
+    video_format    = LaunchConfiguration("video_format")
     leader_can_port    = LaunchConfiguration("leader_can_port")
     follower_can_port  = LaunchConfiguration("follower_can_port")
     gripper_exist      = LaunchConfiguration("gripper_exist")
@@ -108,6 +110,10 @@ def generate_launch_description() -> LaunchDescription:
                               description="global camera: index ('0') or /dev/v4l/by-id/... path"),
         DeclareLaunchArgument("gripper_cam_device", default_value="6",
                               description="gripper camera: index ('1') or /dev/v4l/by-id/... path"),
+        DeclareLaunchArgument("video_transport", default_value="webrtc",
+                              description="video transport: webrtc | websocket"),
+        DeclareLaunchArgument("video_format", default_value="binary",
+                              description="websocket wire format: binary | base64 (ignored for webrtc)"),
         DeclareLaunchArgument("leader_arm", default_value="none",
                               description="leader arm reader: 'none' | 'so101' | 'piper'"),
         DeclareLaunchArgument("follower_arm", default_value="",
@@ -246,6 +252,8 @@ def generate_launch_description() -> LaunchDescription:
                 "session_id": session,
                 "global_topic": global_topic,
                 "wrist_topic": wrist_topic,
+                "video_transport": video_transport,
+                "video_format": video_format,
             }],
             condition=IfCondition(with_camera),
         ),

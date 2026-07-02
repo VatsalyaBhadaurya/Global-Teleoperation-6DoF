@@ -20,14 +20,23 @@ def main() -> int:
                     help="OpenCV index for the global camera (omit for synthetic)")
     ap.add_argument("--wrist-device", type=int, default=None,
                     help="OpenCV index for the wrist camera (omit for synthetic)")
+    ap.add_argument("--video-transport", choices=("webrtc", "websocket"),
+                    default="webrtc",
+                    help="video transport: webrtc (codec/RTP, default) or "
+                         "websocket (JPEG frames over the signaling relay)")
+    ap.add_argument("--video-format", choices=("binary", "base64"),
+                    default="binary",
+                    help="websocket wire format (ignored for webrtc): raw binary "
+                         "JPEG or base64 JPEG in JSON")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     from .camera import CameraConfig
-    from .publisher import VideoPublisher
+    from .publisher import make_video_publisher
 
-    pub = VideoPublisher(
+    pub = make_video_publisher(
         args.signaling, args.session, args.peer_id,
+        transport=args.video_transport, video_format=args.video_format,
         global_cfg=CameraConfig("global", 1280, 720, 30, args.global_device),
         wrist_cfg=CameraConfig("wrist", 640, 480, 30, args.wrist_device),
     )

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SignalingClient } from "../lib/signaling";
 import { VideoViewer } from "../lib/webrtc";
+import { WsVideoViewer } from "../lib/wsvideo";
 
 const SIGNALING_URL =
   process.env.NEXT_PUBLIC_SIGNALING_URL || "ws://localhost:8080";
@@ -33,11 +34,16 @@ export default function Console() {
   const [telemetry, setTelemetry] = useState<Telemetry>({});
   const [advisories, setAdvisories] = useState<Advisory[]>([]);
   const [peerConn, setPeerConn] = useState<string>("new");
+  // Which transport the follower advertised: "webrtc" (default) or "websocket".
+  const [videoMode, setVideoMode] = useState<"webrtc" | "websocket">("webrtc");
 
   const globalRef = useRef<HTMLVideoElement>(null);
   const wristRef = useRef<HTMLVideoElement>(null);
+  const globalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const wristCanvasRef = useRef<HTMLCanvasElement>(null);
   const signalingRef = useRef<SignalingClient | null>(null);
   const viewerRef = useRef<VideoViewer | null>(null);
+  const wsViewerRef = useRef<WsVideoViewer | null>(null);
 
   // Apply ?session= from the URL on the client (after hydration).
   useEffect(() => {
@@ -53,6 +59,18 @@ export default function Console() {
       if (el) el.srcObject = stream;
     };
 
+    // WebSocket-video renderer (canvases). Frames only arrive when the follower
+    // uses the websocket transport, so creating it unconditionally is harmless.
+    wsViewerRef.current = new WsVideoViewer([globalCanvasRef, wristCanvasRef]);
+
+    // Connect to a follower using whichever transport it advertised. WebRTC needs
+    // us to send an offer; the websocket transport just pushes frames to render.
+    const connectToFollower = (follower: any) => {
+      const transport = follower?.video?.transport === "websocket" ? "websocket" : "webrtc";
+      setVideoMode(transport);
+      if (transport === "webrtc") viewerRef.current?.connectTo(follower.peer_id);
+    };
+
     const sig = new SignalingClient(SIGNALING_URL, session, peerId, "viewer", {
       onStatusChange: setConnected,
       onJoined: (msg) => {
@@ -64,13 +82,15 @@ export default function Console() {
         );
         viewerRef.current = viewer;
         const follower = (msg.peers || []).find((p: any) => p.role === "follower");
-        if (follower) viewer.connectTo(follower.peer_id);
+        if (follower) connectToFollower(follower);
       },
       onPeerJoined: (msg) => {
-        if (msg.role === "follower") viewerRef.current?.connectTo(msg.peer_id);
+        if (msg.role === "follower") connectToFollower(msg);
       },
       onAnswer: (msg) => viewerRef.current?.onAnswer(msg.sdp),
       onCandidate: (msg) => viewerRef.current?.onRemoteCandidate(msg.candidate),
+      onVideoFrame: (msg) => wsViewerRef.current?.onBase64(msg.cam, msg.data),
+      onBinaryFrame: (buf) => wsViewerRef.current?.onBinary(buf),
       onState: (msg) => setState(msg.state || msg),
       onTelemetry: (msg) => setTelemetry(msg.telemetry || msg),
       onAdvisory: (msg) => setAdvisories(msg.advisories || []),
@@ -80,6 +100,7 @@ export default function Console() {
 
     return () => {
       viewerRef.current?.close();
+      wsViewerRef.current?.close();
       sig.close();
     };
   }, [session]);
@@ -97,17 +118,38 @@ export default function Console() {
           signaling {connected ? "connected" : "disconnected"}
         </span>
         <span>session: {session}</span>
-        <span>video: {peerConn}</span>
+        <span>video: {videoMode === "webrtc" ? peerConn : "websocket"}</span>
+        <span>transport: {videoMode}</span>
       </div>
 
       <div className="videos">
         <div className="tile">
           <span className="label">Global camera</span>
-          <video ref={globalRef} autoPlay playsInline muted />
+          <video
+            ref={globalRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ display: videoMode === "webrtc" ? "block" : "none" }}
+          />
+          <canvas
+            ref={globalCanvasRef}
+            style={{ display: videoMode === "websocket" ? "block" : "none" }}
+          />
         </div>
         <div className="tile">
           <span className="label">Wrist camera</span>
-          <video ref={wristRef} autoPlay playsInline muted />
+          <video
+            ref={wristRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ display: videoMode === "webrtc" ? "block" : "none" }}
+          />
+          <canvas
+            ref={wristCanvasRef}
+            style={{ display: videoMode === "websocket" ? "block" : "none" }}
+          />
         </div>
       </div>
 

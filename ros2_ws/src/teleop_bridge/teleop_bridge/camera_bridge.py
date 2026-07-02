@@ -35,7 +35,7 @@ VIDEO_QOS = QoSProfile(
 )
 
 from teleop.video.camera import CameraConfig, ROS2Camera
-from teleop.video.publisher import VideoPublisher
+from teleop.video.publisher import make_video_publisher
 
 log = logging.getLogger(__name__)
 
@@ -47,11 +47,15 @@ class CameraBridge(Node):
         self.declare_parameter("session_id", "demo")
         self.declare_parameter("global_topic", "/camera/global/image_raw")
         self.declare_parameter("wrist_topic", "/camera/wrist/image_raw")
+        self.declare_parameter("video_transport", "webrtc")   # webrtc | websocket
+        self.declare_parameter("video_format", "binary")      # binary | base64
 
         ws_url     = self.get_parameter("ws_url").value
         session_id = self.get_parameter("session_id").value
         global_topic = self.get_parameter("global_topic").value
         wrist_topic  = self.get_parameter("wrist_topic").value
+        video_transport = self.get_parameter("video_transport").value
+        video_format    = self.get_parameter("video_format").value
 
         # Camera instances — frames are pushed in via ROS2 subscription callbacks.
         self.global_cam = ROS2Camera(CameraConfig("global", 1280, 720, 30))
@@ -60,9 +64,10 @@ class CameraBridge(Node):
         self.create_subscription(Image, global_topic, self.global_cam.on_image, VIDEO_QOS)
         self.create_subscription(Image, wrist_topic,  self.wrist_cam.on_image,  VIDEO_QOS)
 
-        self._publisher = VideoPublisher(
+        self._publisher = make_video_publisher(
             ws_url, session_id,
             peer_id="follower-video",
+            transport=video_transport, video_format=video_format,
             global_cam=self.global_cam,
             wrist_cam=self.wrist_cam,
         )
@@ -74,7 +79,8 @@ class CameraBridge(Node):
 
         self.get_logger().info(
             f"camera_bridge up (ws_url={ws_url!r}, session={session_id!r}, "
-            f"global={global_topic!r}, wrist={wrist_topic!r})"
+            f"global={global_topic!r}, wrist={wrist_topic!r}, "
+            f"transport={video_transport!r}, format={video_format!r})"
         )
 
     def _run_video(self) -> None:

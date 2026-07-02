@@ -232,3 +232,35 @@ class VideoPublisher:
         for pc in list(self._pcs.values()):
             await pc.close()
         self._pcs.clear()
+
+
+def make_video_publisher(signaling_url: str, session_id: str,
+                         peer_id: str = "follower-video",
+                         transport: str = "webrtc",
+                         video_format: str = "binary",
+                         global_cfg: Optional["CameraConfig"] = None,
+                         wrist_cfg: Optional["CameraConfig"] = None,
+                         global_cam=None,
+                         wrist_cam=None):
+    """Build the video publisher for the chosen transport.
+
+    ``transport``: ``"webrtc"`` (default, real codec over RTP) or ``"websocket"``
+    (JPEG frames over the signaling relay). ``video_format`` (``"binary"`` |
+    ``"base64"``) applies only to the websocket transport. Both publishers expose
+    the same ``run()`` / ``close()`` interface so call sites are identical.
+    """
+    if transport == "websocket":
+        from .ws_publisher import WebSocketVideoPublisher
+        return WebSocketVideoPublisher(
+            signaling_url, session_id, peer_id,
+            global_cfg=global_cfg, wrist_cfg=wrist_cfg,
+            global_cam=global_cam, wrist_cam=wrist_cam,
+            video_format=video_format,
+        )
+    if transport != "webrtc":
+        raise ValueError(f"transport must be 'webrtc' or 'websocket', got {transport!r}")
+    return VideoPublisher(
+        signaling_url, session_id, peer_id,
+        global_cfg=global_cfg, wrist_cfg=wrist_cfg,
+        global_cam=global_cam, wrist_cam=wrist_cam,
+    )
