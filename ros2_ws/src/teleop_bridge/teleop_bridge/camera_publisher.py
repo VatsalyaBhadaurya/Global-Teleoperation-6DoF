@@ -21,8 +21,17 @@ from __future__ import annotations
 import cv2
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge
+
+# Live video wants the newest frame, not every frame: best-effort (no retransmit
+# stalls) + depth-1 (no stale-frame queue). Publisher and subscriber must match.
+VIDEO_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 
 
 def _open_capture(device: str) -> cv2.VideoCapture:
@@ -53,9 +62,9 @@ class CameraPublisher(Node):
         self.jpeg_quality = int(self.get_parameter("jpeg_quality").value)
         self.publish_compressed = bool(self.get_parameter("publish_compressed").value)
 
-        self.publisher = self.create_publisher(Image, topic, 10)
+        self.publisher = self.create_publisher(Image, topic, VIDEO_QOS)
         self.compressed_publisher = (
-            self.create_publisher(CompressedImage, topic + "/compressed", 10)
+            self.create_publisher(CompressedImage, topic + "/compressed", VIDEO_QOS)
             if self.publish_compressed else None
         )
         self.bridge = CvBridge()
@@ -77,6 +86,8 @@ class CameraPublisher(Node):
             return cap
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        # Keep only the newest frame so read() never returns a stale queued one.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         return cap
 
     def publish_frame(self) -> None:

@@ -23,7 +23,16 @@ import threading
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
+
+# Must match the camera_publisher QoS (best-effort depth-1) or the topic won't
+# connect and no frames will flow. Latest-frame-wins for live video.
+VIDEO_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 
 from teleop.video.camera import CameraConfig, ROS2Camera
 from teleop.video.publisher import VideoPublisher
@@ -48,8 +57,8 @@ class CameraBridge(Node):
         self.global_cam = ROS2Camera(CameraConfig("global", 1280, 720, 30))
         self.wrist_cam  = ROS2Camera(CameraConfig("wrist",  640,  480, 30))
 
-        self.create_subscription(Image, global_topic, self.global_cam.on_image, 10)
-        self.create_subscription(Image, wrist_topic,  self.wrist_cam.on_image,  10)
+        self.create_subscription(Image, global_topic, self.global_cam.on_image, VIDEO_QOS)
+        self.create_subscription(Image, wrist_topic,  self.wrist_cam.on_image,  VIDEO_QOS)
 
         self._publisher = VideoPublisher(
             ws_url, session_id,
